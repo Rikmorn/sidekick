@@ -85,6 +85,38 @@ export function repo(): string {
 }
 
 /**
+ * A `repo()` on `main` whose `origin` is a bare repo holding the same commit,
+ * with `origin/HEAD` set. `advance` commits a new file in the repo and feeds
+ * the commit to the bare repo, so only a fetch moves `origin/main` there; it
+ * returns that commit. The bare repo takes each commit by fetching, since the
+ * sandbox blocks `git push`.
+ */
+export function repoWithOrigin(): { top: string; advance: () => string } {
+  const top = repo();
+  git(top, 'branch', '-M', 'main');
+  const bare = tmp();
+  git(bare, 'init', '-q', '--bare', '-b', 'main');
+  const feed = (): void => {
+    git(bare, 'fetch', '-q', top, '+refs/heads/main:refs/heads/main');
+  };
+  feed();
+  git(top, 'remote', 'add', 'origin', bare);
+  git(top, 'fetch', '-q', 'origin');
+  git(top, 'remote', 'set-head', 'origin', 'main');
+  let advanced = 0;
+  const advance = (): string => {
+    advanced += 1;
+    const file = `advance-${advanced}.txt`;
+    fs.writeFileSync(path.join(top, file), `${advanced}\n`);
+    git(top, 'add', file);
+    git(top, 'commit', '-q', '-m', file);
+    feed();
+    return git(top, 'rev-parse', 'HEAD');
+  };
+  return { top, advance };
+}
+
+/**
  * A linked worktree whose git dir under the main checkout is gone. There
  * `git rev-parse` fails with `fatal: not a git repository: <gitDir>`, which is
  * not one of git's outside-every-repository messages.

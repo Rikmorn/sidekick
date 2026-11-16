@@ -1412,7 +1412,11 @@ function isAllowed(call: string[], writes: Writes): boolean {
     case 'config':
       return isConfigAllowed(rest, writes);
     case 'fetch':
-      return rest.length === 2 && REMOTE_REFSPEC.test(rest[1]);
+      return (
+        rest.length === 3 &&
+        rest[0] === '--no-recurse-submodules' &&
+        REMOTE_REFSPEC.test(rest[2])
+      );
     case 'switch':
       return isSwitchAllowed(rest);
     case 'update-ref':
@@ -1501,5 +1505,19 @@ describe('move: calls that reach a remote have a time limit', () => {
     const moved = move(f.dir, ['feat', '--from', `origin/${f.trunk}`]);
     expect(moved.code).toBe(0);
     expect(moved.limited).toEqual(['ls-remote 60000', 'fetch 60000']);
+  });
+});
+
+describe('move: a fetch recurses into no submodule', () => {
+  // A planted `.gitmodules` would have fetch run an embedded repo's own config.
+  test.each(
+    MOVES.filter(([label]) => ['origin', 'pr', 'new, remote'].includes(label)),
+  )('%s fetches with --no-recurse-submodules', (_, setup) => {
+    const f = fixture();
+    const moved = move(f.dir, setup(f));
+    expect(moved.code).toBe(0);
+    const fetches = moved.calls.filter((call) => call[0] === 'fetch');
+    expect(fetches).toHaveLength(1);
+    expect(fetches[0]?.[1]).toBe('--no-recurse-submodules');
   });
 });

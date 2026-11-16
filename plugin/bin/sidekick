@@ -5314,6 +5314,7 @@ var HARDENED_GIT_FLAGS = [
   "-c",
   "core.useReplaceRefs=false"
 ];
+var NO_RECURSE_SUBMODULES = "--no-recurse-submodules";
 var GITFILE_PREFIX = "gitdir: ";
 var COMMONDIR = "commondir";
 var GITDIR = "gitdir";
@@ -9596,16 +9597,19 @@ function parseEvent2(stdin) {
     return;
   }
 }
-function enterWorktreeFetch(stdin, runGit) {
+function enterWorktreeFetch(stdin, deps) {
   try {
     const event = parseEvent2(stdin);
     if (event === undefined || event.tool_input.path !== undefined)
       return;
-    const branch = defaultBranchOf(runGit, event.cwd);
+    if (isUnitWorker(deps.env, event.cwd, deps.home))
+      return;
+    const branch = defaultBranchOf(deps.runGit, event.cwd);
     if (branch === undefined)
       return;
-    runGit("git", [
+    deps.runGit("git", [
       "fetch",
+      NO_RECURSE_SUBMODULES,
       "origin",
       `+refs/heads/${branch}:refs/remotes/origin/${branch}`
     ], event.cwd, { timeoutMs: FETCH_LIMIT_MS });
@@ -9911,8 +9915,12 @@ var VERBS2 = new Map([
     "pre-enter-worktree",
     {
       eventName: "PreToolUse",
-      contextFor: (stdin) => {
-        enterWorktreeFetch(stdin, execRunner);
+      contextFor: (stdin, env) => {
+        enterWorktreeFetch(stdin, {
+          runGit: execRunner,
+          env: env.env,
+          home: env.env.HOME ?? os2.homedir()
+        });
         return {};
       }
     }
@@ -15708,7 +15716,7 @@ function syncLoopTree(tree, repo, timeoutMs) {
   const report2 = askOrigin(tree, timeoutMs);
   if ("issues" in report2)
     return report2;
-  const fetched = tree.runGit("git", ["fetch", "--quiet", "origin"], tree.folder, { timeoutMs });
+  const fetched = tree.runGit("git", ["fetch", "--quiet", NO_RECURSE_SUBMODULES, "origin"], tree.folder, { timeoutMs });
   if (fetched.code !== 0) {
     return {
       issues: [failed("git fetch origin", tree.folder, fetched.stderr)]
@@ -18574,9 +18582,7 @@ var at2 = (args) => ({ args, fetched: undefined });
 var stayedLine = (here) => `nothing changed in ${here.entry.path}: it is still on ${nativeBranch(here.name)}`;
 function fetchInto(runGit, here, remote, refspec) {
   const spec = `+${refspec.src}:${refspec.dst}`;
-  const result = runGit("git", ["fetch", remote, spec], here.entry.path, {
-    timeoutMs: REMOTE_LIMIT_MS
-  });
+  const result = runGit("git", ["fetch", NO_RECURSE_SUBMODULES, remote, spec], here.entry.path, { timeoutMs: REMOTE_LIMIT_MS });
   if (result.code === 0)
     return;
   return {

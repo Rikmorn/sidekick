@@ -14,7 +14,11 @@ import { sessionOf } from './loop-start-prepare.js';
 import type { Runner } from './pm-data.js';
 import { isFolder } from './profile-role.js';
 import { realPathOf } from './sidekick-home.js';
-import { chainOf, hardenedRunner } from './worker-git.js';
+import {
+  chainOf,
+  hardenedRunner,
+  NO_RECURSE_SUBMODULES,
+} from './worker-git.js';
 import { commitOf, HEADS, headCommit, isTrackedClean } from './worker-repo.js';
 import { nativeBranch, nativeFolder, shortBranch } from './worker-worktree.js';
 
@@ -330,7 +334,7 @@ export function syncLoopTree(
   if ('issues' in report) return report;
   const fetched = tree.runGit(
     'git',
-    ['fetch', '--quiet', 'origin'],
+    ['fetch', '--quiet', NO_RECURSE_SUBMODULES, 'origin'],
     tree.folder,
     { timeoutMs },
   );

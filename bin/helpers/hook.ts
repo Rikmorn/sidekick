@@ -9,8 +9,9 @@
  * sidekick's mods are not running. The SessionStart verb `memory-start` prints
  * the memory store's workstream and record for the session. The SubagentStart
  * verb `subagent-start` adds the worker's limits. The PreToolUse
- * verb `pre-enter-worktree` adds no context: it fetches the default branch
- * before `EnterWorktree` creates a worktree, and prints nothing. A known verb
+ * verb `pre-enter-worktree` adds no context: outside a loop's unit worker, it
+ * fetches the default branch before `EnterWorktree` creates a worktree, and
+ * it prints nothing. A known verb
  * prints nothing and returns 0 on input it does not recognise, because a hook
  * never blocks or fails the call it watches (ADR-0010, ADR-0011).
  * `subagent-start` ignores its input: hooks.json binds it to SubagentStart
@@ -353,8 +354,12 @@ const VERBS = new Map<string, Verb>([
     'pre-enter-worktree',
     {
       eventName: 'PreToolUse',
-      contextFor: (stdin) => {
-        enterWorktreeFetch(stdin, execRunner);
+      contextFor: (stdin, env) => {
+        enterWorktreeFetch(stdin, {
+          runGit: execRunner,
+          env: env.env,
+          home: env.env.HOME ?? os.homedir(),
+        });
         return {};
       },
     },

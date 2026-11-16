@@ -1195,6 +1195,23 @@ describe('loop dispatch, further', () => {
     expect(limitOf('merge')).toBe(12_345);
   });
 
+  test("the fetch into the loop's worktree recurses into no submodule", () => {
+    commitOnOrigin('c.txt', 'c\n');
+    expect(dispatch().code).toBe(0);
+    const fetches = gitCalls.filter((c) => c.args.includes('fetch'));
+    expect(fetches.map((c) => c.args)).toEqual([
+      [
+        ...HARDENED_GIT_FLAGS,
+        `--git-dir=${path.join(repo, '.git', 'worktrees', 'loop-fixer')}`,
+        `--work-tree=${loopTree}`,
+        'fetch',
+        '--quiet',
+        '--no-recurse-submodules',
+        'origin',
+      ],
+    ]);
+  });
+
   test('it asks origin for its default branch first, hardened, and fast-forwards to the commit origin reports', () => {
     const tip = commitOnOrigin('c.txt', 'c\n');
     let reported = '';

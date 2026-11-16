@@ -20,7 +20,8 @@ import { checkoutOf, physical } from './worker-repo.js';
  * fsmonitor, from reaching into an embedded repo, whose own config may name a
  * filter git would run, and from reading replace refs, which a worker can
  * plant to change what a commit holds. So such a call sees no work inside an
- * embedded repo.
+ * embedded repo. A fetch still recurses into one, so it also takes
+ * `NO_RECURSE_SUBMODULES`.
  */
 export const HARDENED_GIT_FLAGS: readonly string[] = [
   '-c',
@@ -32,6 +33,14 @@ export const HARDENED_GIT_FLAGS: readonly string[] = [
   '-c',
   'core.useReplaceRefs=false',
 ];
+
+/**
+ * The flag every fetch sidekick runs carries. A fetch reads `.gitmodules` and
+ * the index from the work tree, which a worker can write, and recurses into
+ * each embedded repo they name, under that repo's own config, such as a
+ * `core.sshCommand`. `HARDENED_GIT_FLAGS` leave that recursion on.
+ */
+export const NO_RECURSE_SUBMODULES = '--no-recurse-submodules';
 
 const GITFILE_PREFIX = 'gitdir: ';
 const COMMONDIR = 'commondir';

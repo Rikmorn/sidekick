@@ -7,7 +7,13 @@ import { fileURLToPath } from 'node:url';
 import { CONTEXT_LIMIT_VAR } from '../../plugin/hooks/gauge/contract.js';
 import { CANARY_TEXT, warningText } from './context-monitor.js';
 import { FETCH_LIMIT_MS } from './enter-worktree-fetch.js';
-import { removeTemps, repo, tmp } from './fixtures/worker/repo.js';
+import {
+  git,
+  removeTemps,
+  repo,
+  repoWithOrigin,
+  tmp,
+} from './fixtures/worker/repo.js';
 import {
   HOOK_USAGE_LINE,
   type HookEnv,
@@ -1117,6 +1123,33 @@ describe('runHookCli pre-enter-worktree', () => {
       out: [],
       err: [],
     });
+  });
+
+  test('in a unit worker it fetches nothing, and HOME places the loop store', () => {
+    const { top, advance } = repoWithOrigin();
+    const before = git(top, 'rev-parse', 'origin/main');
+    const after = advance();
+    const home = tmp();
+    const brief = path.join(
+      home,
+      '.claude',
+      'sidekick',
+      'loops',
+      'fixer',
+      'units',
+      'fix-bug-42',
+      'w1',
+      'brief.md',
+    );
+    const stdin = creating(top, { name: 'x' });
+    const unit = { HOME: home, SIDEKICK_WORKER: brief };
+    expect(runVerb('pre-enter-worktree', stdin, PLUGIN_DIR, unit).code).toBe(0);
+    expect(git(top, 'rev-parse', 'origin/main')).toBe(before);
+    // The control: the same session with no worker fetches.
+    expect(
+      runVerb('pre-enter-worktree', stdin, PLUGIN_DIR, { HOME: home }).code,
+    ).toBe(0);
+    expect(git(top, 'rev-parse', 'origin/main')).toBe(after);
   });
 
   test('the usage line names the verb', () => {

@@ -11,6 +11,7 @@
 
 import type { Runner } from './pm-data.js';
 import { shellArg } from './shell.js';
+import { NO_RECURSE_SUBMODULES } from './worker-git.js';
 import { statusEntriesIn } from './worker-listing.js';
 import { branchExists, commitOf, HEADS } from './worker-repo.js';
 import { branchGoneIssues } from './worker-teardown-leftovers.js';
@@ -89,9 +90,12 @@ function fetchInto(
   refspec: { src: string; dst: string },
 ): Failed | undefined {
   const spec = `+${refspec.src}:${refspec.dst}`;
-  const result = runGit('git', ['fetch', remote, spec], here.entry.path, {
-    timeoutMs: REMOTE_LIMIT_MS,
-  });
+  const result = runGit(
+    'git',
+    ['fetch', NO_RECURSE_SUBMODULES, remote, spec],
+    here.entry.path,
+    { timeoutMs: REMOTE_LIMIT_MS },
+  );
   if (result.code === 0) return undefined;
   return {
     lines: [
