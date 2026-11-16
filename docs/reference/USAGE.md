@@ -74,7 +74,7 @@ Each repo you work in with worktrees, tracked or not, needs short worktree guida
 | `lint` | `findings` and `counts` per predicate: label counts, missing Status, open-in-Done, closed-not-Done, `backlog` without `Revisit when:`, `backlog` in a milestone, position-code titles, open issues whose body names `docs/superpowers/`, `unboarded` (open issues, and issues closed as completed after the board was created, with no card; an archived card on an open issue counts as none), stale In Progress, more than one linked board | Grooming; the milestone gate |
 | `gate --milestone <title>` | The milestone with its counts, `ready`, and every open issue in it with Status and `item_id` | Milestone close |
 
-Every issue entry carries `item_id`, the board item's node id, so a write by id needs no lookup. `--quiet` on `board` and `pickup` prints nothing in an untracked repo — the shape a session-start hook needs.
+Every issue entry carries `item_id`, the board item's node id, so a write by id needs no lookup. `--quiet` on `board` and `pickup` prints nothing in an untracked repo — the shape a session-start hook needs. `pickup` prints nothing at all in a loop's unit worker, with any flags, and asks `gh` nothing.
 
 `sidekick rules install` and `sidekick rules check` deliver and audit the rules; the repo's `README.md` §The rules covers both.
 
