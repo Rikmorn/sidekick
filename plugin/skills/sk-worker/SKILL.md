@@ -85,13 +85,13 @@ Message the orchestrator one report: the baseline confirmation, then every quest
 
 ## Rulings
 
-The orchestrator writes its rulings in the rulings file, and its message only points at the file. Read the file and act on what it says, not on the message's text. The file can be checked, it outlives a compaction, and it records each ruling for the run report. After a compaction, re-read the brief and the rulings file, and your own record at the path the hook printed. A worker never edits the workstream, so its State is stale for your own progress and your record is the only place it lives.
+The orchestrator writes its rulings in the rulings file, and its message only points at the file. Read the file and act on what it says, not on the message's text. The file can be checked, it outlives a compaction, and it records each ruling for the run report. After a compaction, re-read the brief and the rulings file. With a plan brief, also re-read your own record at the path the hook printed. A plan's worker never edits the workstream, so its State is stale for your own progress and your record is the only place it lives. A unit worker has no record, as §A unit brief says.
 
 ## The run
 
-Invoke the superpowers skill the brief's `skill` names, and follow it. Its task list and progress stay in this session, where the operator can see them. These rules hold on top of it:
+Invoke the skill the brief's `skill` names, and follow it: a superpowers skill for a plan brief, the role's skill for a unit brief. Its task list and progress stay in this session, where the operator can see them. These rules hold on top of it:
 
-- **The brief answers superpowers' questions.** Where superpowers would ask the person, the brief has already answered: `place` says where to work, and `setup` replaces Project Setup. At `finishing-a-development-branch`, keep the branch as it is and run no `sk-worktree` done. The orchestrator reviews, integrates, and runs `sidekick worker finish`; your end is the run report (§At the end).
+- **The brief answers superpowers' questions.** Where superpowers would ask the person, the brief has already answered: `place` says where to work, and `setup` replaces Project Setup. At `finishing-a-development-branch`, keep the branch as it is and run no `sk-worktree` done. With a plan brief, the orchestrator reviews, integrates, and runs `sidekick worker finish`; your end is the run report (§At the end). With a unit brief, that skill is denied, and your end is the report §A unit brief describes.
 - **Settle a small misfit; raise one that recurs.** Shape the sketch to the tree and list each deviation in the run report. A misfit that keeps recurring goes to the orchestrator, because the plan's premise is wrong.
 - **Rule, except on decisions and goals.** Superpowers rules on a conflict and keeps going; do the same, and record each ruling. A change that touches a decision the plan or the spec records, or a goal either states, goes to the orchestrator first.
 - **Run the prose step** wherever a task has one.

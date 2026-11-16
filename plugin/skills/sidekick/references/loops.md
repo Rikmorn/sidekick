@@ -275,7 +275,7 @@ The loop itself stays under `dontAsk` with its short allow list: its reads, its 
 
 ### What the overlay sets
 
-- **`sandbox`:** `enabled: true`, `autoAllowBashIfSandboxed: true`, `allowUnsandboxedCommands: false`, and `failIfUnavailable: true`, with `network.allowedDomains` from `loop.json`'s `hosts`. Every command runs inside the sandbox, which the OS enforces whatever the command's spelling. With the retry off, Claude Code ignores network entries from the repo's project and local settings. It keeps those from user settings, managed settings, and `--settings` ([the loop probes, §U10](https://github.com/Rikmorn/sidekick/blob/44b87bb6af67f180440c58978791b237a0629b84/docs/research/loop/2026-11-12-loop-probes.md#u10-sidekicks-gates-inside-the-sandbox)). So the hosts reach a worker through its launch settings, and a host in the user or managed settings widens the fence.
+- **`sandbox`:** `enabled: true`, `autoAllowBashIfSandboxed: true`, `allowUnsandboxedCommands: false`, and `failIfUnavailable: true`, with `network.allowedDomains` from `loop.json`'s `hosts`. Every command runs inside the sandbox, which the OS enforces whatever the command's spelling. The exception is a command that matches an `excludedCommands` entry in the user or managed settings, as "What still escapes the fence" says. With the retry off, Claude Code ignores network entries from the repo's project and local settings. It keeps those from user settings, managed settings, and `--settings` ([the loop probes, §U10](https://github.com/Rikmorn/sidekick/blob/44b87bb6af67f180440c58978791b237a0629b84/docs/research/loop/2026-11-12-loop-probes.md#u10-sidekicks-gates-inside-the-sandbox)). So the hosts reach a worker through its launch settings, and a host in the user or managed settings widens the fence.
 - **`permissions.allow`:** `Edit(//<worktree>/**)`, so the file tools work in the worker's own worktree, and a `Read` rule each for the brief, the unit file, and the rulings file. The sandbox bounds a command's writes, not the `Edit` and `Write` tools, which follow permission rules ([the loop probes, §U15](https://github.com/Rikmorn/sidekick/blob/44b87bb6af67f180440c58978791b237a0629b84/docs/research/loop/2026-11-12-loop-probes.md#u15-an-overlay-against-a-sandboxed-write-into-an-added-directory)).
 - **`permissions.deny`,** each an `Edit` rule unless named, where `<common>` is the repo's common git dir:
   - git's redirect files, which would send git, the worker's and sidekick's alike, to another git dir or config: `<common>/commondir`, `<common>/worktrees/*/commondir`, `<common>/worktrees/*/gitdir`, `<common>/worktrees/*/config.worktree`, and the worker's own `<worktree>/.git`;
@@ -283,8 +283,8 @@ The loop itself stays under `dontAsk` with its short allow list: its reads, its 
   - `<common>/sidekick/**`, which holds the desk's records and `finish`'s `disposable` list;
   - the sidekick folder, `<config>/sidekick/**`, which holds the profiles, their role plugins, the loops, and every attempt's folder;
   - each folder the launch adds, the profile's folder and the attempt's folder, so the worker reads them and never writes them;
-  - the memory store, `SIDEKICK_MEMORY_STORE` or `~/sk-memory-store`, as both a `Read` and an `Edit` rule, since the user layer may add it as a working folder;
-  - each skill the table after this list names, as a `Skill` rule;
+  - the memory store, `SIDEKICK_MEMORY_STORE` or `~/sk-memory-store`, as both a `Read` and an `Edit` rule, since a working folder may hold it. The user layer may add it, and so may the launch itself. Take a profile whose `settingSources` leave out `user`, in a repo with a memory key: its launch adds the store to `permissions.additionalDirectories`. The deny holds either way;
+  - each skill "The denied skills" names, as two `Skill` rules: `Skill(<skill>)` for a bare call, and `Skill(<skill> *)` for a call with arguments;
   - `WebFetch` and `WebSearch`, since `allowedDomains` binds neither, and an inherited layer may allow them;
   - `Bash(git push:*)`, the push block's rule.
 - **`permissions.blockReadsOutsideWorkingDirectories: true`,** so the worker reads only its worktree and the folders the launch adds. That is why the launch adds the attempt's folder, rather than allowing it. By the settings docs, as #367's design read them, an allow rule does not lift the block.
@@ -292,7 +292,9 @@ The loop itself stays under `dontAsk` with its short allow list: its reads, its 
 - **`env`:** `SIDEKICK_WORKER`, naming the brief, `DISABLE_AUTOUPDATER=1`, and the push block's `GIT_CONFIG_*` entries. It names no main.
 - **`worktree.baseRef: "head"`,** so the worktree branches from the loop's worktree, which `dispatch` has moved to origin's tip.
 
-The denied skills, as superpowers 7.0.2 and sidekick read on 2026-11-15:
+#### The denied skills
+
+The list follows superpowers 7.0.2 and sidekick, as read on 2026-11-15. By Claude Code's skills docs, fetched on 2026-11-12, `Skill(name)` matches the skill called bare, and `Skill(name *)` a call with arguments. That a `Skill` deny keeps the skill out is believed from those docs, not measured.
 
 | Skill | Why a unit worker may not run it |
 |---|---|
@@ -315,27 +317,36 @@ The denied skills, as superpowers 7.0.2 and sidekick read on 2026-11-15:
 
 ### For a role's author
 
-- **The denied skills stay denied,** whatever the role's skill asks. `superpowers:writing-plans` is among them, so a role skill that builds writes its own plan.
+- **The denied skills are denied** whatever the role's skill asks, as far as a `Skill` deny holds. "What waits on the check by hand" leaves that open. `superpowers:writing-plans` is among them, so a role skill that builds writes its own plan.
 - **Keep a role's commands in its plugin folder.** A hook or MCP server in the role's plugin that runs a path inside the repo runs worker-written code outside the sandbox.
 - **Spell each gate plainly,** as `gates` says, so auto-allow approves it.
 
 ### What still escapes the fence
 
-- **The user layer.** The overlay owns every fence key, but the user layer can still widen the fence while a unit keeps the `user` source. Section 3 of the inherited listing names each such key.
+- **The user layer.** The overlay owns every fence key in the profile's layer, but the user layer can still widen the fence while a unit keeps the `user` source. Section 3 of the inherited listing names its added directories, `allowWrite` paths, allowed domains, and file-write allow rules. It names none of the keys the next bullet gives.
+- **The user layer's sandbox exceptions.** A command that matches `sandbox.excludedCommands` in the user settings, or in the managed file, runs outside the sandbox. By Claude Code's sandboxing docs, fetched on 2026-11-12, `--settings` drops such entries only from a repo's own settings files. Under `dontAsk`, an excluded command still needs a kept allow rule, unless it is one of Claude Code's built-in read-only commands, which need none. The user settings' `sandbox.network.allowUnixSockets` and `sandbox.network.allowMachLookup` let a sandboxed command reach a socket or a macOS service outside the sandbox. The inherited listing reads none of these three keys, so it does not name them.
+- **A loaded mod.** With no managed settings file, on a personal login, a loaded plugin's mod can approve a call past a deny rule or the read block. Claude Code's permissions docs, fetched on 2026-11-12, say so. So the fence's permission rules bind a tool call only while no loaded mod approves past them. Those are the `Edit` denies, the `Skill`, `WebFetch`, and `WebSearch` denies, and the read block. The sandbox still binds every sandboxed command. "Managed settings" says more, #394 probes the fix, and the inherited listing marks each plugin that ships a mod.
 - **The environment.** The profile's `env`, and the user layer's, reach every process the worker starts, MCP servers included. An `env` value that names a path inside the repo, such as a `NODE_OPTIONS` `--require`, runs worker-written code outside the sandbox.
 - **The role's MCP servers** run outside the sandbox, with their own network. They are the role's declared capability, and the inherited listing names them, as the operator ruled for the loop on 2026-11-14.
 - **User-layer hooks** run outside the sandbox too. Keep their commands outside the repo, as under `~/.claude`, where a sandboxed command cannot write.
 - **The push block binds one spelling.** Under auto-allow, a sandboxed `git` call needs no allow rule, so the deny rule refuses only its own spelling of a push. The guarantee is `hosts` leaving out origin's host, which the check warns on.
-- **Refs, `HEAD`, and the main index.** The sandbox lets a linked worktree write the shared `.git`, so a worker can still move refs, `HEAD`, or the main index inside the repo. The operator accepted that risk on 2026-11-15. #404, in `backlog`, gives a worker a git dir of its own.
+- **The rest of the shared `.git`.** The sandbox lets a linked worktree write the shared `.git`, and the fence denies only the files "What the overlay sets" names. So a worker can still write the rest:
+  - refs and `packed-refs`;
+  - the `HEAD` and `index` of every admin folder, the loop's worktree's included;
+  - `info/` and `objects/`;
+  - an embedded repo's `modules/<name>/config` and `modules/<name>/hooks/`. Whether the sandbox's own denial of `config` and `hooks/` reaches those under `modules/` is unknown.
+
+  One consequence: `dispatch` fast-forwards the loop's worktree to whatever `refs/remotes/origin/HEAD` names. A worker that repoints that ref steers the next dispatch's fast-forward onto its own commits. The operator accepted, on 2026-11-15, that a worker can move refs, `HEAD`, or the main index. #404, in `backlog`, gives a worker a git dir of its own.
 - **A `commondir` rewritten after a chain check.** sidekick's git into a worker's worktree checks git's links first, then runs hardened, as `references/workers.md` §Hardened git says. A `commondir` rewritten after that check would send a later call elsewhere. Hooks and fsmonitor stay off, the fence denies the write, and `discard` and `reap` stop the worker before `finish` runs.
 
 ### What waits on the check by hand
 
-Three unknowns wait on #367's check by hand, after it lands, on the Claude Code build of that day:
+These unknowns wait on #367's check by hand, after it lands, on the Claude Code build of that day:
 
 - whether auto-allow approves a sandboxed call under `dontAsk`;
 - whether `gh` and `git` authenticate inside the sandbox;
-- whether the fence's deny on `.git/config` holds against `git config`.
+- whether the fence's deny on `.git/config` holds against `git config`;
+- whether a `Skill` deny keeps a denied skill out, through the `Skill` tool and through a slash command. A slash command expands with no `Skill` call ([the loop probes, §What breaks](https://github.com/Rikmorn/sidekick/blob/44b87bb6af67f180440c58978791b237a0629b84/docs/research/loop/2026-11-12-loop-probes.md#what-breaks)).
 
 ## Managed settings
 
@@ -725,7 +736,7 @@ It wakes the unit's worker, once a ruling waits for it. Under the lock, after th
 
 - **A row whose process may run,** with a `pid` or one the listing gives in a form it cannot read, is left alone. It prints that the worker runs, and exits 0.
 - **One stopped job** is respawned with `claude respawn <job>`, from the loop's worktree, within the limit `start` gives a respawn. It prints `worker <worker> was stopped, so wake respawned its job <job>`.
-- **No row, rows with no job id, or several jobs by the worker's name** refuse, and name `discard`. So does a respawn that fails, and a listing that fails.
+- **No row, rows with no job id, or several jobs by the worker's name** refuse, and name `discard`. So does a respawn that fails. A listing that fails refuses too, saying that wake cannot tell whether the worker still runs.
 
 It never takes `--all`, and never names another job.
 
