@@ -545,14 +545,39 @@ describe('loop dispatch refuses, changing nothing in the loop folder', () => {
       () => `${loopTree} does not exist`,
     ],
     [
-      'an unset origin/HEAD refuses',
+      'an origin whose HEAD names no branch refuses',
       () => {
-        // From git 2.48 a fetch makes a missing origin/HEAD unless told not to.
-        git(repo, 'config', 'remote.origin.followRemoteHEAD', 'never');
-        git(repo, 'remote', 'set-head', 'origin', '--delete');
+        git(origin, 'update-ref', '--no-deref', 'HEAD', head(seed));
         return undefined;
       },
-      'git remote set-head origin --auto',
+      "cannot tell origin's default branch",
+    ],
+    [
+      'an ls-remote that prints what dispatch cannot read refuses',
+      () => {
+        gitReply = (args) =>
+          args.includes('ls-remote')
+            ? { code: 0, stdout: 'not a ref line\n', stderr: '' }
+            : undefined;
+        return undefined;
+      },
+      "cannot tell origin's default branch",
+    ],
+    [
+      'a reported branch that would read as revision syntax refuses',
+      () => {
+        const tip = head(seed);
+        gitReply = (args) =>
+          args.includes('ls-remote')
+            ? {
+                code: 0,
+                stdout: `ref: refs/heads/main@{1}\tHEAD\n${tip}\tHEAD\n`,
+                stderr: '',
+              }
+            : undefined;
+        return undefined;
+      },
+      "cannot tell origin's default branch",
     ],
   ];
 
@@ -1016,7 +1041,7 @@ describe('loop dispatch, further', () => {
     ).toBe(true);
   });
 
-  test('the fetch and the fast-forward both take the sync limit', () => {
+  test('the ls-remote, the fetch, and the fast-forward all take the sync limit', () => {
     commitOnOrigin('c.txt', 'c\n');
     const r = dispatch(
       ARGS,
@@ -1026,21 +1051,118 @@ describe('loop dispatch, further', () => {
     expect(r.code).toBe(0);
     const limitOf = (verb: string) =>
       gitCalls.find((c) => c.args.includes(verb))?.opts?.timeoutMs;
+    expect(limitOf('ls-remote')).toBe(12_345);
     expect(limitOf('fetch')).toBe(12_345);
     expect(limitOf('merge')).toBe(12_345);
   });
 
-  test("an origin/HEAD read that fails for another reason names git's failure, not a missing ref", () => {
+  test('it asks origin for its default branch first, hardened, and fast-forwards to the commit origin reports', () => {
+    const tip = commitOnOrigin('c.txt', 'c\n');
+    let reported = '';
+    gitReply = (args, cwd) => {
+      if (!args.includes('ls-remote')) return undefined;
+      const answer = execRunner('git', args, cwd);
+      reported = answer.stdout;
+      return answer;
+    };
+    expect(dispatch().code).toBe(0);
+    const asked = gitCalls.findIndex((c) => c.args.includes('ls-remote'));
+    const fetched = gitCalls.findIndex((c) => c.args.includes('fetch'));
+    expect(asked).toBeGreaterThan(-1);
+    expect(asked).toBeLessThan(fetched);
+    expect(gitCalls[asked].args).toEqual([
+      ...HARDENED_GIT_FLAGS,
+      `--git-dir=${path.join(repo, '.git', 'worktrees', 'loop-fixer')}`,
+      `--work-tree=${loopTree}`,
+      'ls-remote',
+      '--symref',
+      'origin',
+      'HEAD',
+    ]);
+    expect(reported).toBe(`ref: refs/heads/main\tHEAD\n${tip}\tHEAD\n`);
+    expect(head(loopTree)).toBe(tip);
+  });
+
+  test('a symref pointed at a planted refs/remotes/origin/evil does not steer the fast-forward', () => {
+    const planted = git(
+      repo,
+      'commit-tree',
+      'origin/main^{tree}',
+      '-p',
+      'origin/main',
+      '-m',
+      'planted',
+    );
+    git(repo, 'update-ref', 'refs/remotes/origin/evil', planted);
+    git(
+      repo,
+      'symbolic-ref',
+      'refs/remotes/origin/HEAD',
+      'refs/remotes/origin/evil',
+    );
+    const tip = commitOnOrigin('c.txt', 'c\n');
+    const r = dispatch();
+    expect(r.err).toEqual([]);
+    expect(r.code).toBe(0);
+    expect(head(loopTree)).toBe(tip);
+    const read = readBrief(path.join(attemptOf(), 'brief.md'));
+    if ('issues' in read) throw new Error(read.issues.join('\n'));
+    expect(read.brief.baseline).toBe(tip);
+  });
+
+  test('a tracking ref that differs from what origin reports refuses, naming both', () => {
+    const reported = head(seed);
+    const loopHead = head(loopTree);
+    let moved = '';
+    gitReply = (args) => {
+      // origin moves on between its report and the fetch.
+      if (args.includes('fetch') && moved === '') {
+        moved = commitOnOrigin('c.txt', 'c\n');
+      }
+      return undefined;
+    };
+    const before = snapshot();
+    const r = dispatch();
+    expect(r.code).toBe(1);
+    const said = r.err.join('\n');
+    expect(said).toContain(`origin reports main at ${reported}`);
+    expect(said).toContain(`refs/remotes/origin/main is at ${moved}`);
+    expect(launches).toEqual([]);
+    expect(snapshot()).toEqual(before);
+    expect(head(loopTree)).toBe(loopHead);
+  });
+
+  test('a commit origin reports that the fetch did not bring refuses, naming both', () => {
+    const loopHead = head(loopTree);
+    const tip = commitOnOrigin('c.txt', 'c\n');
     gitReply = (args) =>
-      args.includes('symbolic-ref') && args.includes('refs/remotes/origin/HEAD')
-        ? { code: 124, stdout: '', stderr: 'git did not finish within 10 s' }
+      args.includes('fetch') ? { code: 0, stdout: '', stderr: '' } : undefined;
+    const before = snapshot();
+    const r = dispatch();
+    expect(r.code).toBe(1);
+    const said = r.err.join('\n');
+    expect(said).toContain(`origin reports main at ${tip}`);
+    expect(said).toContain(`${tip} is not in ${repo}`);
+    expect(said).toContain(`refs/remotes/origin/main is at ${loopHead}`);
+    expect(launches).toEqual([]);
+    expect(snapshot()).toEqual(before);
+    expect(head(loopTree)).toBe(loopHead);
+  });
+
+  test("an ls-remote that fails names git's failure, and fetches nothing", () => {
+    gitReply = (args) =>
+      args.includes('ls-remote')
+        ? { code: 124, stdout: '', stderr: 'git did not finish within 60 s' }
         : undefined;
+    const before = snapshot();
     const r = dispatch();
     expect(r.code).toBe(1);
     expect(r.err.join('\n')).toContain(
-      `git symbolic-ref refs/remotes/origin/HEAD failed in ${loopTree}: git did not finish within 10 s`,
+      `git ls-remote --symref origin HEAD failed in ${loopTree}: git did not finish within 60 s`,
     );
-    expect(r.err.join('\n')).not.toContain('is not set');
+    expect(gitCalls.some((c) => c.args.includes('fetch'))).toBe(false);
+    expect(launches).toEqual([]);
+    expect(snapshot()).toEqual(before);
   });
 
   test('a work tree that cannot be read refuses the profile check instead of passing it', () => {

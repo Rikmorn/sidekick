@@ -8,6 +8,7 @@
  */
 
 import * as path from 'node:path';
+import { isControl } from './loop-record.js';
 import { sessionOf } from './loop-start-prepare.js';
 import type { Runner } from './pm-data.js';
 import { isFolder } from './profile-role.js';
@@ -23,8 +24,17 @@ export interface LoopTree {
   runGit: Runner;
 }
 
-const ORIGIN_HEAD = 'refs/remotes/origin/HEAD';
-const REMOTES = 'refs/remotes/';
+const ASK_ORIGIN = ['ls-remote', '--symref', 'origin', 'HEAD'];
+// `ls-remote --symref` prints `ref: refs/heads/<branch>\tHEAD`, then
+// `<object id>\tHEAD`.
+const SYMREF = /^ref: refs\/heads\/(.+)$/;
+const OBJECT_ID = /^(?:[0-9a-f]{40}|[0-9a-f]{64})$/;
+// Characters and sequences git's ref names forbid. A branch without them, or
+// a control character, carries no revision syntax into the tracking ref's
+// lookup, and prints plainly.
+const NOT_IN_REF = /[\s~^:?*[\\]|\.\.|@\{/;
+const isBranchName = (name: string): boolean =>
+  !NOT_IN_REF.test(name) && ![...name].some(isControl);
 
 // git exits 1 from `symbolic-ref -q` on a detached HEAD or a ref that is not
 // set, and from `merge-base --is-ancestor` when the first commit is not an
@@ -131,41 +141,71 @@ function standingIssue(tree: LoopTree, relation: Relation, shown: string) {
   return `${folder}: ${branch} ${how}, and the loop's worktree holds nothing of its own: keep those commits on a branch of their own, then move ${branch} to origin's tip with git reset --keep ${shown} in that folder`;
 }
 
-// The default branch's tip that origin/HEAD names, as its short name and commit.
-function originTip(
+// Origin's default branch and its commit, as origin itself reports them.
+interface OriginReport {
+  branch: string;
+  tip: string;
+}
+
+// The `HEAD` lines of `ls-remote --symref`: one names the branch, one the
+// commit. Anything else reads as no report.
+function parseReport(stdout: string): OriginReport | undefined {
+  const values = stdout
+    .split('\n')
+    .filter((line) => line !== '')
+    .map((line) => line.split('\t'))
+    .filter(([, name]) => name === 'HEAD')
+    .map(([value]) => value);
+  const branches = values.flatMap((value) => {
+    const named = SYMREF.exec(value);
+    return named !== null && isBranchName(named[1]) ? [named[1]] : [];
+  });
+  const tips = values.filter((value) => OBJECT_ID.test(value));
+  const isOneOfEach =
+    values.length === 2 && branches.length === 1 && tips.length === 1;
+  return isOneOfEach ? { branch: branches[0], tip: tips[0] } : undefined;
+}
+
+// Origin's own report of its default branch, so no local ref a worker can
+// move decides the base. It reaches origin, so it takes the sync's limit.
+function askOrigin(
+  tree: LoopTree,
+  timeoutMs: number,
+): OriginReport | { issues: string[] } {
+  const asked = tree.runGit('git', ASK_ORIGIN, tree.folder, { timeoutMs });
+  const shown = `git ${ASK_ORIGIN.join(' ')}`;
+  if (asked.code !== 0) {
+    return { issues: [failed(shown, tree.folder, asked.stderr)] };
+  }
+  const report = parseReport(asked.stdout);
+  return (
+    report ?? {
+      issues: [
+        `${shown} in ${tree.folder} printed no branch and commit for origin's HEAD, so dispatch cannot tell origin's default branch`,
+      ],
+    }
+  );
+}
+
+// After the fetch, the commit origin reported is here, and the branch's
+// tracking ref is at it.
+function trackingIssues(
   tree: LoopTree,
   repo: string,
-): { shown: string; tip: string } | { issues: string[] } {
-  const ref = tree.runGit(
-    'git',
-    ['symbolic-ref', '-q', ORIGIN_HEAD],
-    tree.folder,
-  );
-  if (ref.code === NO) {
-    return {
-      issues: [
-        `${ORIGIN_HEAD} is not set in ${repo}, so dispatch cannot tell origin's default branch: run git remote set-head origin --auto in ${repo}`,
-      ],
-    };
-  }
-  if (ref.code !== 0) {
-    return {
-      issues: [
-        failed(`git symbolic-ref ${ORIGIN_HEAD}`, tree.folder, ref.stderr),
-      ],
-    };
-  }
-  const target = ref.stdout.trim();
-  const tip = commitOf(tree.runGit, tree.folder, target);
-  if (tip === undefined) {
-    return {
-      issues: [`${ORIGIN_HEAD} names ${target}, which names no commit`],
-    };
-  }
-  const shown = target.startsWith(REMOTES)
-    ? target.slice(REMOTES.length)
-    : target;
-  return { shown, tip };
+  { branch, tip }: OriginReport,
+): string[] {
+  const tracking = `refs/remotes/origin/${branch}`;
+  const isHere = commitOf(tree.runGit, tree.folder, tip) === tip;
+  const tracked = commitOf(tree.runGit, tree.folder, tracking);
+  if (isHere && tracked === tip) return [];
+  const where =
+    tracked === undefined
+      ? `${tracking} names no commit`
+      : `${tracking} is at ${tracked}`;
+  const here = isHere ? `${tip} is in ${repo}` : `${tip} is not in ${repo}`;
+  return [
+    `origin reports ${branch} at ${tip}, but after the fetch ${where}, and ${here}: origin may have moved during the fetch, so run dispatch again`,
+  ];
 }
 
 // A checkout cut short leaves `index.lock` behind, so the fast-forward takes
@@ -200,17 +240,21 @@ function fastForward(
 }
 
 /**
- * Fetches origin, then fast-forwards the loop's worktree to the branch
- * `refs/remotes/origin/HEAD` names, and returns the commit it then sits at. A
- * worktree that is ahead or has diverged refuses. The fetch and the
- * fast-forward are dispatch's only writes before its attempt's folder, and
- * each runs within `timeoutMs`.
+ * Asks origin for its default branch and that branch's commit, fetches
+ * origin, then fast-forwards the loop's worktree to that commit, and returns
+ * the commit it then sits at. A report that cannot be read, a fetch that
+ * leaves the branch's tracking ref elsewhere, and a worktree that is ahead or
+ * has diverged each refuse. The fetch and the fast-forward are dispatch's only
+ * writes before its attempt's folder, and each of the three runs within
+ * `timeoutMs`.
  */
 export function syncLoopTree(
   tree: LoopTree,
   repo: string,
   timeoutMs: number,
 ): { baseline: string } | { issues: string[] } {
+  const report = askOrigin(tree, timeoutMs);
+  if ('issues' in report) return report;
   const fetched = tree.runGit(
     'git',
     ['fetch', '--quiet', 'origin'],
@@ -222,11 +266,12 @@ export function syncLoopTree(
       issues: [failed('git fetch origin', tree.folder, fetched.stderr)],
     };
   }
-  const origin = originTip(tree, repo);
-  if ('issues' in origin) return origin;
+  const tracking = trackingIssues(tree, repo, report);
+  if (tracking.length > 0) return { issues: tracking };
   const head = headCommit(tree.runGit, tree.folder);
   if (head === undefined) {
     return { issues: [`${tree.folder}: HEAD names no commit`] };
   }
-  return fastForward(tree, head, origin, timeoutMs);
+  const shown = `origin/${report.branch}`;
+  return fastForward(tree, head, { shown, tip: report.tip }, timeoutMs);
 }

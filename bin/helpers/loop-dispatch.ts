@@ -61,9 +61,9 @@ export interface UnitDispatchOptions {
   draw?: () => string;
   /** How many names to draw before refusing. */
   draws?: number;
-  /** The limit on each git and gh call but the sync's two. */
+  /** The limit on each git and gh call but the sync's three. */
   gitTimeoutMs?: number;
-  /** The limit on the fetch of origin, and on the fast-forward of the loop's worktree. */
+  /** The limit on asking origin for its default branch, on the fetch of origin, and on the fast-forward of the loop's worktree. */
   syncTimeoutMs?: number;
 }
 
