@@ -111,7 +111,7 @@ The five caps are required, and each is a whole number of at least 1.
 
 A dispatch under `sidekick loop start --record` writes `dispatched` with `record: true`. It counts toward `unitsPerDay`, since it still spends. Its failures count toward `failedUnitsInARow`, since its worker does real work in its worktree. It does not count toward `attemptsPerUnit`: nothing it builds can land, so the unit's real attempts are still to come.
 
-The caps count only the lines sidekick's verbs write, never the model's, so the model cannot stretch them. Each count reads every day file in `records/`, and `dispatch` refuses when one cannot be read, since a count that skips a file undercounts. `dispatch` refuses at any cap's limit, and while an attempt is in flight, since one worker runs at a time.
+The caps count only the lines sidekick's verbs write, never the model's, so the model cannot stretch them. Each count reads every day file in `records/`, and `dispatch` refuses when one cannot be read, since a count that skips a file undercounts. It also refuses a day file whose name is no real date, such as `2026-02-30.jsonl`, naming it, since that name would read as another day's file. `dispatch` refuses at any cap's limit, and while an attempt is in flight, since one worker runs at a time.
 
 - **The clock.** `reap` closes an attempt once its working time passes `workMinutesPerUnit`. So an attempt runs at most the work cap plus the wait cap, whatever the model writes. A finished unit that waits past both caps for the operator's landing is reaped too; #377 stops the clock once `land --check` records a tested commit.
 - **The breaker.** `reap` writes `failed`, and so does `discard --failed`, the route #377 gives a failed rebase or gate. A plain `discarded` line neither breaks the run nor extends it. Once the run reaches the cap, `dispatch` refuses until the operator runs `sidekick loop resume <name>`, which writes `resumed`. Under `start --record` nothing lands, so a trial loop stops after that many failures until the operator resumes it.
@@ -214,7 +214,7 @@ The in-repo and scratch tests compare paths without regard to case. They also st
 #### Programs with checks of their own
 
 - **`claude`** refuses outright, since it starts a Claude session. That covers `Bash(claude respawn *)`, which also matches `--all` and every other session. A loop respawns its stopped worker with `sidekick loop wake`, a fixed verb, as "Units" says.
-- **`sidekick`** must name its subcommand plainly, with no wildcard and no leading option in the next word. It refuses `sidekick worker` and `sidekick profile launch`, which start sessions, and `sidekick profile` before a wildcard. Its first two words compare lower-cased. `Bash(sidekick loop record fixer *)` passes, though a loop needs no such rule: `start` adds it itself, with the two `arm` rules and the unit verbs' rules.
+- **`sidekick`** must name its subcommand plainly, with no wildcard and no leading option in the next word. It refuses `sidekick worker` and `sidekick profile launch`, which start sessions, and `sidekick profile` before a wildcard. Its first two words compare lower-cased. It refuses every `sidekick loop` rule but one naming `land`, such as `Bash(sidekick loop *)` or `Bash(sidekick loop record fixer *)`. `start` compiles the loop's own verbs, pinned to its name. So a wider rule could only grant a verb the loop must not run, such as `resume`, which resets the breaker. `land` passes, since a class grants the landing as a request the operator runs (ADR-0015 Decision 5).
 - **`gh`** must name its subcommand next, with no leading option and no wildcard. It refuses `gh extension` and `gh alias`, which run code. So put `-R` after the subcommand, as in `Bash(gh issue list -R <owner>/<repo>)`. The subcommand compares lower-cased.
 - **`find`** and its GNU twin `gfind` refuse with `-exec`, `-execdir`, `-ok`, `-okdir`, or a wildcard in any word. Each primary runs a command, and a wildcard could spell one.
 - **`rg`** refuses with `--pre`, alone or joined to a value, or a wildcard in any word. ripgrep 14.1.1 ran a preprocessor command for `--pre <cmd>` and `--pre=<cmd>`, as measured while #363 was built.
@@ -717,6 +717,7 @@ A unit's text is an issue, fetched and filtered in code, so only the operator's 
 - a title renamed by another account, or by one that no longer exists;
 - a closed issue;
 - an issue with more than 100 comments, or more than 100 title renames, the most one read takes;
+- a renames list whose length differs from its count, since a rename it leaves out cannot be checked;
 - text the key check flags, in the title, the body, or a kept comment, naming the check and never the text.
 
 Comments written, or last edited, by another account are dropped, and the unit file says how many were. The unit file holds the issue's title, its URL, its body, and each kept comment under its author and time.
