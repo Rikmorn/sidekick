@@ -161,8 +161,9 @@ describe('keptLayers', () => {
 // https://code.claude.com/docs/en/settings-reference (§enabledPlugins: an
 // object mapping `plugin@marketplace` to a Boolean). `sandbox.excludedCommands`,
 // `sandbox.network.allowUnixSockets`, and `sandbox.network.allowMachLookup` are
-// arrays of strings in the settings schema Claude Code 2.1.325 bundles, read
-// on 2026-11-16.
+// arrays of strings, and `sandbox.network.allowAllUnixSockets` and
+// `sandbox.network.allowLocalBinding` Booleans, in the settings schema Claude
+// Code 2.1.325 bundles, read on 2026-11-16.
 describe('summariseLayer', () => {
   const empty = {
     allow: [],
@@ -173,6 +174,8 @@ describe('summariseLayer', () => {
     excludedCommands: [],
     unixSockets: [],
     machLookups: [],
+    allUnixSockets: false,
+    localBinding: false,
     editAllows: [],
     enabledPlugins: {},
   };
@@ -210,6 +213,8 @@ describe('summariseLayer', () => {
         allowedDomains: ['github.com', false],
         allowUnixSockets: ['/var/run/docker.sock', null],
         allowMachLookup: ['com.apple.CoreSimulator.*', 2],
+        allowAllUnixSockets: true,
+        allowLocalBinding: true,
       },
       excludedCommands: ['docker *', {}],
     },
@@ -249,6 +254,8 @@ describe('summariseLayer', () => {
       excludedCommands: ['docker *'],
       unixSockets: ['/var/run/docker.sock'],
       machLookups: ['com.apple.CoreSimulator.*'],
+      allUnixSockets: true,
+      localBinding: true,
       editAllows: ['Edit(//tmp/x/**)'],
       enabledPlugins: { 'a@m': true, 'b@m': false },
     });
@@ -286,6 +293,8 @@ describe('summariseLayer', () => {
             allowedDomains: 1,
             allowUnixSockets: 'x',
             allowMachLookup: {},
+            allowAllUnixSockets: 'yes',
+            allowLocalBinding: 1,
           },
           excludedCommands: 'x',
         },

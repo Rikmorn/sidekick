@@ -84,6 +84,10 @@ export interface LayerSummary {
   unixSockets: string[];
   /** `sandbox.network.allowMachLookup`: macOS services a sandboxed command may reach. */
   machLookups: string[];
+  /** `sandbox.network.allowAllUnixSockets` is true: a sandboxed command may reach every socket. */
+  allUnixSockets: boolean;
+  /** `sandbox.network.allowLocalBinding` is true: a sandboxed command may bind a localhost port. */
+  localBinding: boolean;
   editAllows: string[];
   enabledPlugins: Record<string, boolean>;
 }
@@ -158,6 +162,8 @@ export function summariseLayer(settings: Settings): LayerSummary {
     excludedCommands: stringsOf(sandbox.excludedCommands),
     unixSockets: stringsOf(network.allowUnixSockets),
     machLookups: stringsOf(network.allowMachLookup),
+    allUnixSockets: network.allowAllUnixSockets === true,
+    localBinding: network.allowLocalBinding === true,
     editAllows: allow.filter((rule) => rule.startsWith('Edit(')),
     enabledPlugins: booleanEntries(settings.enabledPlugins),
   };

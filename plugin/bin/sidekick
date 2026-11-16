@@ -10107,6 +10107,8 @@ function summariseLayer(settings) {
     excludedCommands: stringsOf(sandbox.excludedCommands),
     unixSockets: stringsOf(network.allowUnixSockets),
     machLookups: stringsOf(network.allowMachLookup),
+    allUnixSockets: network.allowAllUnixSockets === true,
+    localBinding: network.allowLocalBinding === true,
     editAllows: allow.filter((rule) => rule.startsWith("Edit(")),
     enabledPlugins: booleanEntries(settings.enabledPlugins)
   };
@@ -14013,6 +14015,7 @@ var NONE = "  (none)";
 var EXEMPT_SUFFIXES2 = ["@builtin", "@inline"];
 var BARE_WRITE = /^(?:Edit|Write|MultiEdit|NotebookEdit)(?:\(\*\))?$/;
 var isBareWrite = (rule) => BARE_WRITE.test(rule);
+var whenOn = (on) => on ? ["true"] : [];
 var PluginListSchema = array(looseObject({ id: string(), installPath: nullish(string()) }));
 var errorText4 = (e) => e instanceof Error ? e.message : String(e);
 var section = (title, entries) => [
@@ -14208,7 +14211,9 @@ function inheritedListing(manifest, profile, deps) {
       ["file-write allow for every path", summary2.allow.filter(isBareWrite)],
       ["sandbox-excluded command", summary2.excludedCommands],
       ["allowed Unix socket", summary2.unixSockets],
-      ["allowed Mach lookup", summary2.machLookups]
+      ["allowed Mach lookup", summary2.machLookups],
+      ["sandbox.network.allowAllUnixSockets", whenOn(summary2.allUnixSockets)],
+      ["sandbox.network.allowLocalBinding", whenOn(summary2.localBinding)]
     ];
     for (const [kind, entries] of widenings) {
       fence.push(...entries.map((entry) => `${source}: ${kind}: ${entry}`));

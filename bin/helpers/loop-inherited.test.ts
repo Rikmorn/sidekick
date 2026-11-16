@@ -271,7 +271,7 @@ describe('inheritedListing', () => {
     ]);
   });
 
-  test("names each layer's sandbox exclusions, Unix sockets, and Mach lookups in the fence", () => {
+  test("names each layer's sandbox exceptions in the fence, and a socket or binding key only when true", () => {
     const user = path.join(configDir, 'settings.json');
     const exceptions = {
       sandbox: {
@@ -279,11 +279,18 @@ describe('inheritedListing', () => {
         network: {
           allowUnixSockets: ['/var/run/docker.sock'],
           allowMachLookup: ['com.apple.CoreSimulator.*'],
+          allowAllUnixSockets: true,
+          allowLocalBinding: true,
         },
       },
     };
     json(user, exceptions);
-    json(managed, { sandbox: { excludedCommands: ['podman *'] } });
+    json(managed, {
+      sandbox: {
+        excludedCommands: ['podman *'],
+        network: { allowAllUnixSockets: false, allowLocalBinding: false },
+      },
+    });
     const profile = profileWith({ settings: exceptions });
     const own = path.join(profile.dir, 'profile.json');
     const out = run(profile, listed([]));
@@ -292,9 +299,13 @@ describe('inheritedListing', () => {
       `  user (${user}): sandbox-excluded command: docker *`,
       `  user (${user}): allowed Unix socket: /var/run/docker.sock`,
       `  user (${user}): allowed Mach lookup: com.apple.CoreSimulator.*`,
+      `  user (${user}): sandbox.network.allowAllUnixSockets: true`,
+      `  user (${user}): sandbox.network.allowLocalBinding: true`,
       `  profile (${own}): sandbox-excluded command: docker *`,
       `  profile (${own}): allowed Unix socket: /var/run/docker.sock`,
       `  profile (${own}): allowed Mach lookup: com.apple.CoreSimulator.*`,
+      `  profile (${own}): sandbox.network.allowAllUnixSockets: true`,
+      `  profile (${own}): sandbox.network.allowLocalBinding: true`,
       `  managed (${managed}): sandbox-excluded command: podman *`,
     ]);
   });
