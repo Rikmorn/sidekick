@@ -46,7 +46,7 @@ Fires on `PostToolUse` for the Read tool, from `plugin/hooks/hooks.json`. The wr
 
 ### The fetch hook
 
-Fires on `PreToolUse` for `EnterWorktree`, from `plugin/hooks/hooks.json`, through the wrapper `plugin/hooks/pre-enter-worktree`, which runs `node <plugin>/bin/sidekick hook pre-enter-worktree`. Every `EnterWorktree` call without a `path` creates a worktree. Before that call runs, the hook reads `origin/HEAD` and fetches the default branch from `origin`, so `origin/<default>` is current when the worktree starts. A call with a `path` enters an existing worktree and runs no git. The fetch stops after 5 seconds. The hook never fails the call: with no `origin/HEAD`, no network, a failed or slow fetch, or a malformed event, it exits 0 and prints nothing.
+Fires on `PreToolUse` for `EnterWorktree`, from `plugin/hooks/hooks.json`, through the wrapper `plugin/hooks/pre-enter-worktree`, which runs `node <plugin>/bin/sidekick hook pre-enter-worktree`. Every `EnterWorktree` call without a `path` creates a worktree. Before that call runs, the hook reads `origin/HEAD` and fetches the default branch from `origin`, so `origin/<default>` is current when the worktree starts. A call with a `path` enters an existing worktree and runs no git. So does every call in a loop's unit worker, since a `PreToolUse` hook runs even on a call that the worker's deny rule then refuses. The fetch carries `--no-recurse-submodules`, so it never reaches into an embedded repo that a planted `.gitmodules` names. The fetch stops after 5 seconds. The hook never fails the call: with no `origin/HEAD`, no network, a failed or slow fetch, or a malformed event, it exits 0 and prints nothing.
 
 ### The subagent start hook
 

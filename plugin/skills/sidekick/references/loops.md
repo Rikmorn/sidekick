@@ -286,7 +286,7 @@ The loop itself stays under `dontAsk` with its short allow list: its reads, its 
   - the memory store, `SIDEKICK_MEMORY_STORE` or `~/sk-memory-store`, as both a `Read` and an `Edit` rule, since a working folder may hold it. The user layer may add it, and so may the launch itself. Take a profile whose `settingSources` leave out `user`, in a repo with a memory key: its launch adds the store to `permissions.additionalDirectories`. The deny holds either way;
   - each skill "The denied skills" names, as two `Skill` rules: `Skill(<skill>)` for a bare call, and `Skill(<skill> *)` for a call with arguments;
   - `WebFetch` and `WebSearch`, since `allowedDomains` binds neither, and an inherited layer may allow them;
-  - `EnterWorktree` and `ExitWorktree`, since a unit worker starts in its worktree and works nowhere else, and the fetch hook's git before `EnterWorktree` runs unhardened;
+  - `EnterWorktree` and `ExitWorktree`, since a unit worker starts in its worktree and works nowhere else. The deny does not stop sidekick's fetch hook. A `PreToolUse` hook runs even on a call that a deny rule then refuses ([the loop probes, §U24's control](https://github.com/Rikmorn/sidekick/blob/44b87bb6af67f180440c58978791b237a0629b84/docs/research/loop/2026-11-12-loop-probes.md#u24s-control-a-deny-rule-against-a-hooks-approval-and-a-mods)). So the hook checks for a unit worker itself, and fetches nothing there;
   - `Bash(git push:*)`, the push block's rule.
 - **`permissions.blockReadsOutsideWorkingDirectories: true`,** so the worker reads only its worktree and the folders the launch adds. That is why the launch adds the attempt's folder, rather than allowing it. By the settings docs, as #367's design read them, an allow rule does not lift the block.
 - **`autoMemoryEnabled: false`,** so Claude Code's own auto memory loads nothing into a worker that reads issue text.
@@ -353,7 +353,7 @@ These unknowns wait on #367's check by hand, after it lands, on the Claude Code 
 - whether the overlay's pinned `false` outranks a `true` in the user settings, checked on one of the six keys;
 - whether a `Skill` deny keeps a denied skill out, through the `Skill` tool and through a slash command. A slash command expands with no `Skill` call ([the loop probes, §What breaks](https://github.com/Rikmorn/sidekick/blob/44b87bb6af67f180440c58978791b237a0629b84/docs/research/loop/2026-11-12-loop-probes.md#what-breaks));
 - whether the desk, watching a real unit worker, runs a filter that the worker planted in an embedded repo's own config;
-- whether the `EnterWorktree` deny holds under `dontAsk`;
+- whether a bare `EnterWorktree` deny keeps the model from calling the tool at all under `dontAsk`, or only refuses each call once its `PreToolUse` hooks have run;
 - which MCP servers load in a unit launch: the role's, user-scope servers, claude.ai connectors, or user-enabled plugins' servers.
 
 ## Managed settings

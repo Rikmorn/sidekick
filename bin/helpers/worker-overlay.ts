@@ -169,8 +169,9 @@ export const UNIT_DENIED_SKILLS = [
 // `allowedDomains` binds neither tool, and an inherited layer may allow them.
 const WEB_TOOLS = ['WebFetch', 'WebSearch'];
 
-// A unit worker starts in its worktree and works nowhere else, and the fetch
-// hook's own git before `EnterWorktree` runs unhardened.
+// A unit worker starts in its worktree and works nowhere else. A `PreToolUse`
+// hook runs even on a call a deny then refuses, so the fetch hook checks for a
+// unit worker itself.
 const WORKTREE_TOOLS = ['EnterWorktree', 'ExitWorktree'];
 
 // Everything under a folder.

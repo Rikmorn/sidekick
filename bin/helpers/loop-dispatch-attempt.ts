@@ -1,8 +1,9 @@
 /**
  * The attempt's folder `sidekick loop dispatch` writes once every check has
  * passed, `<loop folder>/units/<unit>/<worker>/`: the unit file, the brief,
- * and `worker.json`. A dispatch that ends before its worker's start is
- * recorded removes what it wrote, by exact path.
+ * and `worker.json`. A dispatch that ends while no `dispatched` line counts
+ * the attempt removes what it wrote, by exact path. Once that line is
+ * written, the folder stays with it.
  */
 
 import * as fs from 'node:fs';
