@@ -7,6 +7,7 @@
 
 import * as fs from 'node:fs';
 import * as path from 'node:path';
+import { messageOf } from './loop-io.js';
 import type { UnitIssue } from './loop-issue.js';
 import { renderUnitFile } from './loop-issue.js';
 import {
@@ -140,9 +141,6 @@ export function briefText(a: AttemptInput, dir: string): string {
     '',
   ].join('\n');
 }
-
-const messageOf = (e: unknown): string =>
-  e instanceof Error ? e.message : String(e);
 
 const isGone = (e: unknown): boolean =>
   e instanceof Error && 'code' in e && e.code === 'ENOENT';

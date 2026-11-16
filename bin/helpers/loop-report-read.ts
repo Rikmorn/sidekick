@@ -8,6 +8,7 @@
  */
 
 import * as fs from 'node:fs';
+import { messageOf } from './loop-io.js';
 import { unitReportIssues } from './worker-finish-report.js';
 
 /** One place a report may sit: the file, the folder it must lie inside, and that folder's name in a line. */
@@ -23,9 +24,6 @@ export type Read = { text: string } | { missing: true } | { issues: string[] };
 // O_NONBLOCK, so a FIFO swapped in after the check opens at once and is refused, never waited on.
 const READ_NO_FOLLOW =
   fs.constants.O_RDONLY | fs.constants.O_NOFOLLOW | fs.constants.O_NONBLOCK;
-
-const messageOf = (e: unknown): string =>
-  e instanceof Error ? e.message : String(e);
 
 const codeOf = (e: unknown): string | undefined =>
   e instanceof Error && 'code' in e && typeof e.code === 'string'

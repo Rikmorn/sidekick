@@ -10,6 +10,7 @@
 import type { LoopEnv } from './loop.js';
 import { discardAttempt } from './loop-discard.js';
 import { envIssues } from './loop-dispatch-checks.js';
+import { type Io, type Out, REFUSED, refuse } from './loop-io.js';
 import {
   loopNameIssues,
   takeUnitsLock,
@@ -27,24 +28,15 @@ import { parseFlags } from './profile.js';
 
 export const REAP_USAGE_LINE = 'sidekick loop reap <name>';
 
-type Out = (line: string) => void;
-type Io = { out: Out; err: Out };
-
 /** What a reap printed, one lead and the discard's lines, and the attempt it closed, if any; or why it could not judge or close one. */
 export type Reaped =
   | { lines: string[]; closed: Attempt | undefined }
   | { issues: string[] };
 
-const REFUSED = 1;
 const CANNOT_TIME =
   "reap cannot read the loop's record, so it cannot time the attempt in flight";
 const REAP_SKIPPED =
   'reap could not run, so an attempt past its work cap may run on:';
-
-const refuse = (err: Out, issues: string[]): number => {
-  for (const issue of issues) err(issue);
-  return REFUSED;
-};
 
 const print = (sink: Out, lines: string[]): void => {
   for (const line of lines) sink(line);

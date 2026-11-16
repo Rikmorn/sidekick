@@ -12,6 +12,7 @@
 import * as fs from 'node:fs';
 import * as path from 'node:path';
 import { BRIEF_FILE, UNIT_REPORT } from './loop-dispatch-attempt.js';
+import { messageOf } from './loop-io.js';
 import { appendRecord, type RecordLine } from './loop-record.js';
 import { callAt, type JobCall, stopJob } from './loop-start-jobs.js';
 import { mayRun, type UnitContext, workerRows } from './loop-unit-context.js';
@@ -32,9 +33,6 @@ import { lockPid } from './worktree-lock.js';
 export type Discarded =
   | { removed: boolean; lines: string[] }
   | { issues: string[] };
-
-const messageOf = (e: unknown): string =>
-  e instanceof Error ? e.message : String(e);
 
 // Stops each of the worker's rows whose process may run, and waits for a
 // listed process to exit. Returns the lines that keep the attempt in flight.

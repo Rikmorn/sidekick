@@ -8,6 +8,7 @@ import * as fs from 'node:fs';
 import * as path from 'node:path';
 import * as v from 'valibot';
 import { localDate } from './local-date.js';
+import { messageOf } from './loop-io.js';
 import type { LoopManifest } from './loop-manifest.js';
 import { IsoUtcSchema, type RecordLine, readDayFiles } from './loop-record.js';
 import { writeWhole } from './loop-state.js';
@@ -30,9 +31,6 @@ const DAY_FILE = /^(\d{4})-(\d{2})-(\d{2})\.jsonl$/;
 const MINUTE_MS = 60_000;
 
 type Caps = LoopManifest['caps'];
-
-const messageOf = (e: unknown): string =>
-  e instanceof Error ? e.message : String(e);
 
 const issuesOf = (issues: v.BaseIssue<unknown>[]): string[] =>
   issues.map((issue) => `${v.getDotPath(issue) ?? 'value'}: ${issue.message}`);

@@ -11,6 +11,7 @@
 
 import type { LoopEnv } from './loop.js';
 import { envIssues } from './loop-dispatch-checks.js';
+import { type Io, type Out, REFUSED, refuse } from './loop-io.js';
 import { reapFirst } from './loop-reap.js';
 import { callAt, respawnWith } from './loop-start-jobs.js';
 import { sessionOf } from './loop-start-prepare.js';
@@ -28,16 +29,6 @@ import type { Job } from './worker-jobs.js';
 import { nativeFolder } from './worker-worktree.js';
 
 export const WAKE_USAGE_LINE = 'sidekick loop wake <name> --unit <id>';
-
-type Out = (line: string) => void;
-type Io = { out: Out; err: Out };
-
-const REFUSED = 1;
-
-const refuse = (err: Out, issues: string[]): number => {
-  for (const issue of issues) err(issue);
-  return REFUSED;
-};
 
 interface WakeCall {
   name: string;

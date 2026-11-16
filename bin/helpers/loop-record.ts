@@ -49,6 +49,9 @@ export const isControl = (ch: string): boolean => {
     code <= LAST_C0 || code === DEL || (code >= FIRST_C1 && code <= LAST_C1)
   );
 };
+
+/** The controls that text a verb takes or keeps whole may hold: a line end and a tab. */
+export const TEXT_CONTROLS: ReadonlySet<string> = new Set(['\n', '\t']);
 const plain = v.check(
   (s: string) => ![...s].some(isControl),
   'must hold no control character (U+0000 to U+001F, U+007F, or U+0080 to U+009F)',

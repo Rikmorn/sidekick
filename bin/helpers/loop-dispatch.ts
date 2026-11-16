@@ -25,17 +25,13 @@ import {
   loadLoop,
   skillIssues,
 } from './loop-dispatch-checks.js';
-import {
-  launchAttempt,
-  launchEnvOf,
-  REFUSED,
-  refuse,
-} from './loop-dispatch-launch.js';
+import { launchAttempt, launchEnvOf } from './loop-dispatch-launch.js';
 import {
   checkLoopTree,
   type LoopTree,
   syncLoopTree,
 } from './loop-dispatch-tree.js';
+import { type Io, type Out, REFUSED, refuse } from './loop-io.js';
 import { fetchUnitIssue, type UnitIssue } from './loop-issue.js';
 import { reapDue } from './loop-reap.js';
 import { sessionOf } from './loop-start-prepare.js';
@@ -66,9 +62,6 @@ export interface UnitDispatchOptions {
   /** The limit on asking origin for its default branch, on the fetch of origin, and on the fast-forward of the loop's worktree. */
   syncTimeoutMs?: number;
 }
-
-type Out = (line: string) => void;
-type Io = { out: Out; err: Out };
 
 // A worker's name is at most 40 characters: this many of the loop's name, a
 // hyphen, and the six hex characters HEX_BYTES gives.

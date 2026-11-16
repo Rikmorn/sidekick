@@ -16,8 +16,9 @@ import * as path from 'node:path';
 import type { LoopEnv } from './loop.js';
 import { UNIT_REPORT } from './loop-dispatch-attempt.js';
 import { envIssues } from './loop-dispatch-checks.js';
+import { type Io, type Out, REFUSED, refuse } from './loop-io.js';
 import { reapFirstOrWarn } from './loop-reap.js';
-import { isControl } from './loop-record.js';
+import { isControl, TEXT_CONTROLS } from './loop-record.js';
 import { type Place, readPlain } from './loop-report-read.js';
 import {
   loopNameIssues,
@@ -41,22 +42,12 @@ import { nativeBranch, nativeFolder } from './worker-worktree.js';
 
 export const REPORT_USAGE_LINE = 'sidekick loop report <name> --unit <id>';
 
-type Out = (line: string) => void;
-type Io = { out: Out; err: Out };
-
-const REFUSED = 1;
 const PROPOSALS = /^##\s+Proposals\s*$/i;
 // The key check matches a private key's header alone, so its body lines withhold until this line.
 const KEY_BLOCK_END = /-----END[ A-Z0-9_-]{0,100}PRIVATE KEY(?: BLOCK)?-----/i;
 const GAP =
   'the report has no ## Proposals section, so it proposes no outward action: read that as a gap in the report, not as nothing to do';
-const KEPT_CONTROLS = new Set(['\n', '\t']);
 const HEX = 16;
-
-const refuse = (err: Out, issues: string[]): number => {
-  for (const issue of issues) err(issue);
-  return REFUSED;
-};
 
 const print = (sink: Out, lines: string[]): void => {
   for (const line of lines) sink(line);
@@ -152,7 +143,7 @@ const withheld = (ids: readonly string[]): string =>
 const visible = (text: string): string =>
   [...text]
     .map((ch) =>
-      isControl(ch) && !KEPT_CONTROLS.has(ch)
+      isControl(ch) && !TEXT_CONTROLS.has(ch)
         ? `\\x${ch.charCodeAt(0).toString(HEX).padStart(2, '0')}`
         : ch,
     )

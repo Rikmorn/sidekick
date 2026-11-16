@@ -13,6 +13,7 @@ import type { LoopEnv } from './loop.js';
 import type { Call, Dispatch } from './loop-dispatch.js';
 import { removeAttempt, type Written } from './loop-dispatch-attempt.js';
 import type { LoopTree } from './loop-dispatch-tree.js';
+import { type Io, messageOf, type Out, REFUSED, refuse } from './loop-io.js';
 import { appendRecord } from './loop-record.js';
 import { untrustedLines } from './loop-start-act.js';
 import { writeWorkerFile } from './loop-units.js';
@@ -20,24 +21,11 @@ import type { ClaudeResult } from './profile-launch.js';
 import type { WorkerEnv } from './worker.js';
 import { dispatchUnit, type Launched } from './worker-dispatch.js';
 
-type Out = (line: string) => void;
-type Io = { out: Out; err: Out };
-
-// The exit of a refusal, and of a launch that refused without a code of its own.
-export const REFUSED = 1;
-
-export const refuse = (err: Out, issues: string[]): number => {
-  for (const issue of issues) err(issue);
-  return REFUSED;
-};
-
+// A launch that refused without a code of its own exits as a refusal.
 const failedCode = (code: number): number => (code === 0 ? REFUSED : code);
 
 // The reason a refused launch's `discarded` line gives.
 const REFUSED_REASON = 'the launch was refused';
-
-const messageOf = (e: unknown): string =>
-  e instanceof Error ? e.message : String(e);
 
 /** The worker's name, the loop's worktree it launches from, and what dispatch wrote for it. */
 export interface Attempt {

@@ -7828,6 +7828,15 @@ function loopNames(root) {
 import * as fs34 from "node:fs";
 import * as path39 from "node:path";
 
+// bin/helpers/loop-io.ts
+var REFUSED = 1;
+var refuse4 = (err, issues) => {
+  for (const issue of issues)
+    err(issue);
+  return REFUSED;
+};
+var messageOf4 = (e) => e instanceof Error ? e.message : String(e);
+
 // bin/helpers/loop-record.ts
 import * as fs31 from "node:fs";
 import * as path36 from "node:path";
@@ -7976,6 +7985,8 @@ var isControl = (ch) => {
   const code = ch.charCodeAt(0);
   return code <= LAST_C0 || code === DEL || code >= FIRST_C1 && code <= LAST_C1;
 };
+var TEXT_CONTROLS = new Set([`
+`, "\t"]);
 var plain = check((s) => ![...s].some(isControl), "must hold no control character (U+0000 to U+001F, U+007F, or U+0080 to U+009F)");
 var summary = pipe(string(), minLength(1), maxLength(1000), plain);
 var command = pipe(string(), minLength(1), maxLength(4000), plain);
@@ -8210,19 +8221,19 @@ function parseLoopManifest(raw) {
   };
 }
 var isMissing5 = (err) => err instanceof Error && ("code" in err) && err.code === "ENOENT";
-var messageOf4 = (err) => err instanceof Error ? err.message : String(err);
+var messageOf5 = (err) => err instanceof Error ? err.message : String(err);
 function readText2(file) {
   try {
     return { text: fs32.readFileSync(file, "utf8") };
   } catch (err) {
-    return { why: isMissing5(err) ? "missing" : messageOf4(err) };
+    return { why: isMissing5(err) ? "missing" : messageOf5(err) };
   }
 }
 function decode(text) {
   try {
     return { raw: JSON.parse(text) };
   } catch (err) {
-    return { why: `invalid JSON: ${messageOf4(err)}` };
+    return { why: `invalid JSON: ${messageOf5(err)}` };
   }
 }
 function readLoopManifest(file) {
@@ -8267,7 +8278,7 @@ var ArmedSchema = object({
   renewal: nonEmpty2,
   renewalAt: time
 });
-var messageOf5 = (e) => e instanceof Error ? e.message : String(e);
+var messageOf6 = (e) => e instanceof Error ? e.message : String(e);
 var isMissing6 = (e) => e instanceof Error && ("code" in e) && e.code === "ENOENT";
 var isExists2 = (e) => e instanceof Error && ("code" in e) && e.code === "EEXIST";
 function readFileOf(file, schema) {
@@ -8277,7 +8288,7 @@ function readFileOf(file, schema) {
   } catch (e) {
     return isMissing6(e) ? { kind: "absent" } : {
       kind: "broken",
-      issue: `${file}: cannot read the file: ${messageOf5(e)}`
+      issue: `${file}: cannot read the file: ${messageOf6(e)}`
     };
   }
   let json;
@@ -8286,7 +8297,7 @@ function readFileOf(file, schema) {
   } catch (e) {
     return {
       kind: "broken",
-      issue: `${file}: not valid JSON: ${messageOf5(e)}`
+      issue: `${file}: not valid JSON: ${messageOf6(e)}`
     };
   }
   const parsed = safeParse(schema, json);
@@ -8309,7 +8320,7 @@ function writeWhole(file, value) {
     return [];
   } catch (e) {
     fs33.rmSync(temp, { force: true });
-    return [`${file}: cannot write the file: ${messageOf5(e)}`];
+    return [`${file}: cannot write the file: ${messageOf6(e)}`];
   }
 }
 var writeState = (loopDir, state) => writeWhole(path38.join(loopDir, STATE_FILE), state);
@@ -8320,7 +8331,7 @@ function removeState(loopDir) {
     fs33.rmSync(file, { force: true });
     return [];
   } catch (e) {
-    return [`${file}: cannot remove the file: ${messageOf5(e)}`];
+    return [`${file}: cannot remove the file: ${messageOf6(e)}`];
   }
 }
 var currentArmed = (state, armed) => armed.kind === "ok" && armed.value.launch === state.launch ? armed.value : undefined;
@@ -8462,7 +8473,7 @@ function removeDead(file, dead) {
   try {
     fs33.renameSync(file, grave);
   } catch (e) {
-    return isMissing6(e) ? null : `${file}: cannot take over the lock: ${messageOf5(e)}`;
+    return isMissing6(e) ? null : `${file}: cannot take over the lock: ${messageOf6(e)}`;
   }
   const moved = readText3(grave);
   if (moved === dead) {
@@ -8490,7 +8501,7 @@ function takeLock(loopDir, opts, lockFile = LOCK_FILE) {
       if (!isExists2(e)) {
         return {
           kind: "busy",
-          issue: `${file}: cannot take the lock: ${messageOf5(e)}`
+          issue: `${file}: cannot take the lock: ${messageOf6(e)}`
         };
       }
     }
@@ -8513,7 +8524,6 @@ var WORKER_FILE = "worker.json";
 var RECORDS_DIR2 = "records";
 var DAY_FILE = /^(\d{4})-(\d{2})-(\d{2})\.jsonl$/;
 var MINUTE_MS3 = 60000;
-var messageOf6 = (e) => e instanceof Error ? e.message : String(e);
 var issuesOf = (issues) => issues.map((issue2) => `${getDotPath(issue2) ?? "value"}: ${issue2.message}`);
 function unitIdIssues(id) {
   const parsed = safeParse(UnitIdSchema, id);
@@ -8541,7 +8551,7 @@ function readWorkerFile(dir) {
   try {
     json = JSON.parse(fs34.readFileSync(file, "utf8"));
   } catch (e) {
-    return { issues: [`${file}: ${messageOf6(e)}`] };
+    return { issues: [`${file}: ${messageOf4(e)}`] };
   }
   const parsed = safeParse(WorkerFileSchema, json);
   return parsed.success ? parsed.output : { issues: issuesOf(parsed.issues).map((i) => `${file}: ${i}`) };
@@ -8554,7 +8564,7 @@ function writeWorkerFile(dir, file) {
     fs34.mkdirSync(dir, { recursive: true });
     return writeWhole(path39.join(dir, WORKER_FILE), parsed.output);
   } catch (e) {
-    return [`${path39.join(dir, WORKER_FILE)}: ${messageOf6(e)}`];
+    return [`${path39.join(dir, WORKER_FILE)}: ${messageOf4(e)}`];
   }
 }
 function dayFiles(loopDir) {
@@ -8562,7 +8572,7 @@ function dayFiles(loopDir) {
   try {
     return fs34.readdirSync(dir).filter((name) => DAY_FILE.test(name));
   } catch (e) {
-    return e instanceof Error && "code" in e && e.code === "ENOENT" ? [] : { issue: `${dir}: cannot list the records: ${messageOf6(e)}` };
+    return e instanceof Error && "code" in e && e.code === "ENOENT" ? [] : { issue: `${dir}: cannot list the records: ${messageOf4(e)}` };
   }
 }
 function dayOf(name) {
@@ -10013,7 +10023,7 @@ var Response = object({
     }))
   })
 });
-var refuse4 = (...issues) => ({ issues });
+var refuse5 = (...issues) => ({ issues });
 var keyReasons = (where, text) => {
   const ids = keyHits(text);
   return ids.length === 0 ? [] : [`the ${where} matches the key check (${ids.join(", ")})`];
@@ -10021,11 +10031,11 @@ var keyReasons = (where, text) => {
 function fetchUnitIssue(run, repoTop, issue2, timeoutMs = 30000) {
   const origin = run("git", ["remote", "get-url", "origin"], repoTop);
   if (origin.code !== 0) {
-    return refuse4(`origin is not readable: ${origin.stderr.trim()}`);
+    return refuse5(`origin is not readable: ${origin.stderr.trim()}`);
   }
   const slug = parseOrigin(origin.stdout);
   if (!slug)
-    return refuse4("origin is not a GitHub repository");
+    return refuse5("origin is not a GitHub repository");
   const r = run("gh", [
     "api",
     "graphql",
@@ -10040,7 +10050,7 @@ function fetchUnitIssue(run, repoTop, issue2, timeoutMs = 30000) {
   ], repoTop, { timeoutMs });
   if (r.code !== 0) {
     const text = r.stderr.trim() || (r.code === TIMED_OUT ? `timed out after ${timeoutMs} ms` : `exit ${r.code}`);
-    return refuse4(`gh failed: ${text}`);
+    return refuse5(`gh failed: ${text}`);
   }
   const parsed = (() => {
     try {
@@ -10050,12 +10060,12 @@ function fetchUnitIssue(run, repoTop, issue2, timeoutMs = 30000) {
     }
   })();
   if (!parsed?.success) {
-    return refuse4("gh returned an unexpected response for the issue");
+    return refuse5("gh returned an unexpected response for the issue");
   }
   const { viewer, repository } = parsed.output.data;
   const found = repository?.issue;
   if (!found)
-    return refuse4(`no issue #${issue2} in ${slug.owner}/${slug.repo}`);
+    return refuse5(`no issue #${issue2} in ${slug.owner}/${slug.repo}`);
   const trusted = viewer.login;
   const isTrusted = (a) => a?.login === trusted;
   const editTrusted = (editor, lastEditedAt) => editor === null ? lastEditedAt === null : isTrusted(editor);
@@ -10090,7 +10100,7 @@ function fetchUnitIssue(run, repoTop, issue2, timeoutMs = 30000) {
     ...keyReasons("body", found.body),
     ...kept.flatMap((c, i) => keyReasons(`comment ${i + 1}`, c.body))
   ];
-  return reasons.length > 0 ? refuse4(...reasons) : { issue: unitIssue };
+  return reasons.length > 0 ? refuse5(...reasons) : { issue: unitIssue };
 }
 function renderUnitFile(u) {
   const comments = u.comments.map((c) => `### ${c.author}, ${c.createdAt}
@@ -10189,7 +10199,6 @@ function briefText(a, dir) {
   ].join(`
 `);
 }
-var messageOf7 = (e) => e instanceof Error ? e.message : String(e);
 var isGone = (e) => e instanceof Error && ("code" in e) && e.code === "ENOENT";
 function removeAttempt(written) {
   const unlinked = written.files.flatMap((file) => {
@@ -10197,7 +10206,7 @@ function removeAttempt(written) {
       fs40.unlinkSync(file);
       return [];
     } catch (e) {
-      return isGone(e) ? [] : [`cannot remove ${file}: ${messageOf7(e)}`];
+      return isGone(e) ? [] : [`cannot remove ${file}: ${messageOf4(e)}`];
     }
   });
   const removed = [...written.made].reverse().flatMap((dir) => {
@@ -10205,7 +10214,7 @@ function removeAttempt(written) {
       fs40.rmdirSync(dir);
       return [];
     } catch (e) {
-      return isGone(e) ? [] : [`cannot remove ${dir}: ${messageOf7(e)}`];
+      return isGone(e) ? [] : [`cannot remove ${dir}: ${messageOf4(e)}`];
     }
   });
   return [...unlinked, ...removed];
@@ -10244,7 +10253,7 @@ function writeAttempt(a) {
   } catch (e) {
     return {
       issues: [
-        `cannot write the attempt's folder ${dir}: ${messageOf7(e)}`,
+        `cannot write the attempt's folder ${dir}: ${messageOf4(e)}`,
         ...removeAttempt(written)
       ]
     };
@@ -10723,14 +10732,14 @@ var longName = (word) => word.split("=")[0] ?? word;
 var findIssues = optionIssues((w) => FIND_RUNS_CODE.includes(w), "a find rule with -exec, -execdir, -ok, -okdir, or a wildcard can run any command, so name the paths and tests it needs.");
 var rgIssues = optionIssues((w) => longName(w) === "--pre", "an rg rule with --pre or a wildcard can run any command as a preprocessor, so name the pattern, paths, and options it needs.");
 var fdIssues = optionIssues((w) => FD_EXEC_SHORT.test(w) || FD_RUNS_CODE.includes(longName(w)), "an fd rule with -x, -X, --exec, --exec-batch, or a wildcard can run any command, so name the pattern, paths, and options it needs.");
-var refuse5 = (issue2) => () => [issue2];
+var refuse6 = (issue2) => () => [issue2];
 var dashedGitIssues = (name) => name.startsWith(GIT_DASHED) ? [DASHED_GIT_ISSUE] : [];
 var PROGRAM_CHECKS = new Map([
   [
     "claude",
     {
       reads: 0,
-      issues: refuse5("a claude rule starts a Claude session, so grant a narrower command.")
+      issues: refuse6("a claude rule starts a Claude session, so grant a narrower command.")
     }
   ],
   ["sidekick", { reads: 2, issues: sidekickIssues }],
@@ -10743,14 +10752,14 @@ var PROGRAM_CHECKS = new Map([
     "tar",
     {
       reads: 0,
-      issues: refuse5("a tar rule can run a command through its options, so grant a narrower command.")
+      issues: refuse6("a tar rule can run a command through its options, so grant a narrower command.")
     }
   ],
   [
     "ssh",
     {
       reads: 0,
-      issues: refuse5("an ssh rule runs commands on another host, so grant a narrower command.")
+      issues: refuse6("an ssh rule runs commands on another host, so grant a narrower command.")
     }
   ]
 ]);
@@ -11083,7 +11092,7 @@ var usage2 = (err) => {
   err(`usage: ${ARM_USAGE_LINE}`);
   return 1;
 };
-var refuse6 = (err, issue2) => {
+var refuse7 = (err, issue2) => {
   err(issue2);
   return 1;
 };
@@ -11155,7 +11164,7 @@ function plain2(name, loaded, out) {
 function armed(name, loaded, ids, lenv, out, err) {
   const bad = ["tick", "renewal"].find((flag) => !JOB_ID.test(ids[flag]));
   if (bad !== undefined) {
-    return refuse6(err, `--${bad} "${ids[bad]}": a job id is 1 to 64 letters, digits, "-", or "_"`);
+    return refuse7(err, `--${bad} "${ids[bad]}": a job id is 1 to 64 letters, digits, "-", or "_"`);
   }
   const record2 = {
     v: 1,
@@ -11198,7 +11207,7 @@ function runArm(rest2, lenv, out, err) {
   }
   const loaded = load2(name, lenv);
   if (!loaded.ok)
-    return refuse6(err, loaded.issue);
+    return refuse7(err, loaded.issue);
   if (isArmed !== true)
     return plain2(name, loaded, out);
   if (ids.tick === undefined || ids.renewal === undefined)
@@ -11295,7 +11304,7 @@ function jobsAlive(armed2, now) {
 var BETWEEN_TICKS = "idle";
 var KNOWN_ACTIVE = new Set(["busy", "waiting"]);
 var sessionOf2 = (name) => `loop-${name}`;
-var refuse7 = (lines) => ({ kind: "refuse", lines });
+var refuse8 = (lines) => ({ kind: "refuse", lines });
 function chooseAction(input) {
   const job = input.state?.job ?? null;
   const candidates3 = candidatesOf2(input, job);
@@ -11317,14 +11326,14 @@ function pickRow(name, candidates3, job) {
   if (first === undefined)
     return { kind: "row", row: { kind: "none" } };
   if (others.length > 0)
-    return refuse7(severalLines(name, candidates3, job));
+    return refuse8(severalLines(name, candidates3, job));
   return classify2(name, first);
 }
 function classify2(name, row) {
   if (row.id === undefined)
-    return refuse7(interactiveLines(name, row.pid));
+    return refuse8(interactiveLines(name, row.pid));
   if (row.pidMalformed === true)
-    return refuse7(malformedLines(name, row.id));
+    return refuse8(malformedLines(name, row.id));
   const found = row.pid === undefined ? { kind: "stopped", job: row.id } : { kind: "live", job: row.id, status: row.status };
   return { kind: "row", row: found };
 }
@@ -11334,7 +11343,7 @@ function whilePaused(input, row) {
     case "stopped":
       return { kind: "off" };
     case "live":
-      return mayStop(row, input.stopNow) ? { kind: "pause", job: row.job } : refuse7(notBetweenTicksLines(row, pausedWhy(input.name), "stop"));
+      return mayStop(row, input.stopNow) ? { kind: "pause", job: row.job } : refuse8(notBetweenTicksLines(row, pausedWhy(input.name), "stop"));
     default: {
       const unhandled = row;
       throw new Error(`unhandled row ${JSON.stringify(unhandled)}`);
@@ -11376,7 +11385,7 @@ function liveAction(input, row, origin) {
   if (mayStop(row, input.stopNow))
     return { kind: "relaunch", job: row.job };
   const why = relaunchWhy(input.name, row.job, origin);
-  return refuse7(notBetweenTicksLines(row, why, "relaunch"));
+  return refuse8(notBetweenTicksLines(row, why, "relaunch"));
 }
 function stoppedAction(input, job, origin) {
   const launchOver = (reason7) => ({
@@ -11842,7 +11851,7 @@ var refused = (name, lines) => ({
   lines
 });
 var sessionOf3 = (name) => `loop-${name}`;
-var messageOf8 = (e) => e instanceof Error ? e.message : String(e);
+var messageOf7 = (e) => e instanceof Error ? e.message : String(e);
 function configDirIssue(env) {
   const dir = env.CLAUDE_CONFIG_DIR;
   if (dir === undefined || dir === "" || path56.isAbsolute(dir))
@@ -11977,7 +11986,7 @@ function readText5(file) {
   try {
     return { text: fs46.readFileSync(file, "utf-8") };
   } catch (e) {
-    return { issue: `${file}: cannot read the file: ${messageOf8(e)}` };
+    return { issue: `${file}: cannot read the file: ${messageOf7(e)}` };
   }
 }
 function checkedText(file, manifest) {
@@ -12236,7 +12245,6 @@ var respawnJob = (call, job, name) => respawnWith(call, job, {
 
 // bin/helpers/loop-unit-context.ts
 import * as path58 from "node:path";
-var REFUSED = 1;
 var loopNameIssues = (name) => isProfileName(name) ? [] : [`"${name}" is not a loop name: use ${PROFILE_NAME_RULE}`];
 function unitContextOf(name, lenv) {
   const named = loopNameIssues(name);
@@ -13636,7 +13644,6 @@ function finish(opts, wenv, out, err) {
 }
 
 // bin/helpers/loop-discard.ts
-var messageOf9 = (e) => e instanceof Error ? e.message : String(e);
 function stopWorker(call, rows, worker, exitWaitMs) {
   const stillRuns = `worker ${worker} may still run, so the attempt stays in flight: run sidekick loop discard again once it has stopped`;
   for (const row of rows) {
@@ -13746,7 +13753,7 @@ function writeClosing(ctx, lines) {
     return [];
   } catch (e) {
     return [
-      `cannot write the record in ${ctx.loopDir}: ${messageOf9(e)}. sidekick loop show ${ctx.name} shows whether the attempt closed; if it did not, run sidekick loop discard again`
+      `cannot write the record in ${ctx.loopDir}: ${messageOf4(e)}. sidekick loop show ${ctx.name} shows whether the attempt closed; if it did not, run sidekick loop discard again`
     ];
   }
 }
@@ -13780,14 +13787,8 @@ function discardAttempt(ctx, attempt, reason7, failed, exitWaitMs = 15000) {
 
 // bin/helpers/loop-reap.ts
 var REAP_USAGE_LINE = "sidekick loop reap <name>";
-var REFUSED2 = 1;
 var CANNOT_TIME = "reap cannot read the loop's record, so it cannot time the attempt in flight";
 var REAP_SKIPPED = "reap could not run, so an attempt past its work cap may run on:";
-var refuse8 = (err, issues) => {
-  for (const issue2 of issues)
-    err(issue2);
-  return REFUSED2;
-};
 var print = (sink, lines) => {
   for (const line of lines)
     sink(line);
@@ -13815,7 +13816,7 @@ function reapFirst(ctx, io, act) {
   return underUnitsLock(ctx, io.err, () => {
     const reaped = reapDue(ctx);
     if ("issues" in reaped)
-      return refuse8(io.err, reaped.issues);
+      return refuse4(io.err, reaped.issues);
     print(io.out, reaped.lines);
     return act(reaped.closed);
   });
@@ -13859,30 +13860,21 @@ function loopReap(rest2, lenv, out, err) {
   const parsed = parseFlags(rest2, {});
   if (parsed === undefined || parsed.positionals.length !== 1) {
     err(`usage: ${REAP_USAGE_LINE}`);
-    return REFUSED2;
+    return REFUSED;
   }
   const [name] = parsed.positionals;
   const early = [...loopNameIssues(name), ...envIssues(lenv.env, name, "reap")];
   if (early.length > 0)
-    return refuse8(err, early);
+    return refuse4(err, early);
   const ctx = unitContextOf(name, lenv);
   if ("issues" in ctx)
-    return refuse8(err, ctx.issues);
+    return refuse4(err, ctx.issues);
   return reapFirst(ctx, { out, err }, () => 0);
 }
 
 // bin/helpers/loop-answer.ts
 var ANSWER_USAGE_LINE = "sidekick loop answer <name> --unit <id> <text>";
-var REFUSED3 = 1;
-var ALLOWED_CONTROLS = new Set([`
-`, "\t"]);
 var APPEND_NO_FOLLOW = fs54.constants.O_WRONLY | fs54.constants.O_APPEND | fs54.constants.O_CREAT | fs54.constants.O_NOFOLLOW;
-var refuse9 = (err, issues) => {
-  for (const issue2 of issues)
-    err(issue2);
-  return REFUSED3;
-};
-var messageOf10 = (e) => e instanceof Error ? e.message : String(e);
 var codePointName2 = (ch) => `U+${(ch.codePointAt(0) ?? 0).toString(16).toUpperCase().padStart(4, "0")}`;
 function parseAnswer(rest2) {
   const parsed = parseFlags(rest2, { unit: { type: "string" } });
@@ -13898,7 +13890,7 @@ function textIssues(text, maxChars) {
   if (text.trim() === "")
     return ["the text is empty: write the ruling in it"];
   const chars = [...text];
-  const refused2 = chars.filter((ch) => isControl(ch) && !ALLOWED_CONTROLS.has(ch));
+  const refused2 = chars.filter((ch) => isControl(ch) && !TEXT_CONTROLS.has(ch));
   const controls = [...new Set(refused2.map(codePointName2))];
   const ids = keyHits(text);
   return [
@@ -13931,7 +13923,7 @@ ${body}`;
     }
     return [];
   } catch (e) {
-    return [`cannot write the ruling to ${file}: ${messageOf10(e)}`];
+    return [`cannot write the ruling to ${file}: ${messageOf4(e)}`];
   }
 }
 function nextStep(lenv, call, worker, rulings) {
@@ -13951,7 +13943,7 @@ function writeAnswered(ctx, answer, at2) {
     return [];
   } catch (e) {
     return [
-      `the ruling is already in ${rulings}, but answer cannot write the record in ${ctx.loopDir}: ${messageOf10(e)}. Running answer again appends the ruling a second time, and the attempt's wait stays open until an answered line closes it`
+      `the ruling is already in ${rulings}, but answer cannot write the record in ${ctx.loopDir}: ${messageOf4(e)}. Running answer again appends the ruling a second time, and the attempt's wait stays open until an answered line closes it`
     ];
   }
 }
@@ -13961,10 +13953,10 @@ function answerInFlight(ctx, call, io) {
     lacks: "has no worker to rule for"
   });
   if ("issues" in open)
-    return refuse9(io.err, open.issues);
+    return refuse4(io.err, open.issues);
   const { worker } = open;
   if (worker === "") {
-    return refuse9(io.err, [
+    return refuse4(io.err, [
       `the attempt in flight for unit ${call.unit} names no worker, so answer has no rulings file to write`
     ]);
   }
@@ -13973,10 +13965,10 @@ function answerInFlight(ctx, call, io) {
   const at2 = ctx.lenv.now();
   const appended = appendRuling(rulings, call.text, at2);
   if (appended.length > 0)
-    return refuse9(io.err, appended);
+    return refuse4(io.err, appended);
   const answered = writeAnswered(ctx, { unit: call.unit, worker, rulings }, at2);
   if (answered.length > 0)
-    return refuse9(io.err, answered);
+    return refuse4(io.err, answered);
   io.out(`unit ${call.unit} · worker ${worker} · answered in ${rulings}`);
   io.out(nextStep(ctx.lenv, call, worker, rulings));
   return 0;
@@ -13985,7 +13977,7 @@ function loopAnswer(rest2, lenv, out, err, { maxChars = 20000 } = {}) {
   const call = parseAnswer(rest2);
   if (call === undefined) {
     err(`usage: ${ANSWER_USAGE_LINE}`);
-    return REFUSED3;
+    return REFUSED;
   }
   const early = [
     ...loopNameIssues(call.name),
@@ -13994,22 +13986,16 @@ function loopAnswer(rest2, lenv, out, err, { maxChars = 20000 } = {}) {
     ...envIssues(lenv.env, call.name, "answer")
   ];
   if (early.length > 0)
-    return refuse9(err, early);
+    return refuse4(err, early);
   const ctx = unitContextOf(call.name, lenv);
   if ("issues" in ctx)
-    return refuse9(err, ctx.issues);
+    return refuse4(err, ctx.issues);
   const io = { out, err };
   return reapFirst(ctx, io, () => answerInFlight(ctx, call, io));
 }
 
 // bin/helpers/loop-discard-verb.ts
 var DISCARD_USAGE_LINE = "sidekick loop discard <name> --unit <id> --reason <text> [--failed]";
-var REFUSED4 = 1;
-var refuse10 = (err, issues) => {
-  for (const issue2 of issues)
-    err(issue2);
-  return REFUSED4;
-};
 function parseDiscard(rest2) {
   const parsed = parseFlags(rest2, {
     unit: { type: "string" },
@@ -14040,10 +14026,10 @@ function discardInFlight(ctx, call, io, reaped) {
     lacks: "has nothing to close"
   });
   if ("issues" in open)
-    return refuse10(io.err, open.issues);
+    return refuse4(io.err, open.issues);
   const discarded = discardAttempt(ctx, open, call.reason, call.failed);
   if ("issues" in discarded)
-    return refuse10(io.err, discarded.issues);
+    return refuse4(io.err, discarded.issues);
   for (const line of discarded.lines)
     io.out(line);
   return 0;
@@ -14052,14 +14038,14 @@ function loopDiscard(rest2, lenv, out, err) {
   const call = parseDiscard(rest2);
   if (call === undefined) {
     err(`usage: ${DISCARD_USAGE_LINE}`);
-    return REFUSED4;
+    return REFUSED;
   }
   const early = earlyIssues(call, lenv.env);
   if (early.length > 0)
-    return refuse10(err, early);
+    return refuse4(err, early);
   const ctx = unitContextOf(call.name, lenv);
   if ("issues" in ctx)
-    return refuse10(err, ctx.issues);
+    return refuse4(err, ctx.issues);
   const io = { out, err };
   return reapFirst(ctx, io, (reaped) => discardInFlight(ctx, call, io, reaped));
 }
@@ -15232,7 +15218,7 @@ function summary2(ready) {
   ];
 }
 var startLines = (ready, wenv) => ready.brief.kind === "unit" ? [dispatchedLine(ready)] : [...mainLines(ready, wenv), ...summary2(ready)];
-var refuse11 = (err, issues) => {
+var refuse9 = (err, issues) => {
   for (const issue2 of issues)
     err(issue2);
   return 1;
@@ -15275,7 +15261,7 @@ function stopping(ready, job, wenv) {
 }
 function refuseStray(ready, verdict, wenv, err) {
   const { failed, stopped } = stopping(ready, verdict.job, wenv);
-  return refuse11(err, [
+  return refuse9(err, [
     ...verdict.lines,
     ...failed,
     wayOut(ready, verdict.cause, stopped)
@@ -15285,10 +15271,10 @@ function refuseUnrecorded(ready, job, why, { wenv, err }) {
   const lead = `the worker started, but recording its start failed: ${why}`;
   if (job === null) {
     const unstopped = `claude printed no job id for "${ready.brief.name}", so dispatch could not stop it: find its id with claude agents --json --all, then stop it with claude stop <id>.`;
-    return refuse11(err, [lead, wayOut(ready, "unrecorded", unstopped)]);
+    return refuse9(err, [lead, wayOut(ready, "unrecorded", unstopped)]);
   }
   const { failed, stopped } = stopping(ready, job, wenv);
-  return refuse11(err, [lead, ...failed, wayOut(ready, "unrecorded", stopped)]);
+  return refuse9(err, [lead, ...failed, wayOut(ready, "unrecorded", stopped)]);
 }
 function runOnStart(onStart, job) {
   try {
@@ -15330,13 +15316,13 @@ function launch3(ready, wenv, hooks) {
     err(note);
   const excluded = ensureWorktreesExcluded(wenv.runGit, ready.mainTop, ready.commonDir);
   if ("issues" in excluded) {
-    return { code: refuse11(err, excluded.issues), job: null };
+    return { code: refuse9(err, excluded.issues), job: null };
   }
   if (excluded.line !== undefined)
     out(excluded.line);
   const blocked = hooks.beforeLaunch?.() ?? [];
   if (blocked.length > 0)
-    return { code: refuse11(err, blocked), job: null };
+    return { code: refuse9(err, blocked), job: null };
   const args = bgArgs(ready.args, {
     pluginDirs: ready.pluginDir === undefined ? [] : [ready.pluginDir],
     permissionMode: ready.mode,
@@ -15356,7 +15342,7 @@ function launch3(ready, wenv, hooks) {
 function runCheck(opts, wenv, out, err) {
   const checked2 = checkOnly(opts, wenv);
   if ("issues" in checked2)
-    return refuse11(err, checked2.issues);
+    return refuse9(err, checked2.issues);
   for (const note of checked2.notes)
     err(note);
   out(checked2.line);
@@ -15367,10 +15353,10 @@ function dispatch(opts, wenv, out, err) {
     return runCheck(opts, wenv, out, err);
   const read = readBrief(opts.brief);
   if ("issues" in read)
-    return refuse11(err, read.issues);
+    return refuse9(err, read.issues);
   const checked2 = checkDispatch(read.brief, read.path, opts, wenv);
   if ("issues" in checked2)
-    return refuse11(err, checked2.issues);
+    return refuse9(err, checked2.issues);
   return launch3(checked2, wenv, { out, err }).code;
 }
 var UNIT_MODE = "dontAsk";
@@ -15382,10 +15368,10 @@ var unitLaunchEnv = (wenv, launchFolder) => ({
 function dispatchUnit(unit2, wenv, out, err) {
   const read = readBrief(unit2.briefPath);
   if ("issues" in read)
-    return { code: refuse11(err, read.issues), job: null };
+    return { code: refuse9(err, read.issues), job: null };
   if (read.brief.kind !== "unit") {
     const issue2 = `${read.path}: a unit launch takes a unit brief, and this one is a plan brief`;
-    return { code: refuse11(err, [issue2]), job: null };
+    return { code: refuse9(err, [issue2]), job: null };
   }
   const opts = {
     mode: UNIT_MODE,
@@ -15395,7 +15381,7 @@ function dispatchUnit(unit2, wenv, out, err) {
   };
   const checked2 = checkDispatch(read.brief, read.path, opts, unitLaunchEnv(wenv, unit2.launchFolder), { attemptDir: unit2.attemptDir, hosts: unit2.hosts });
   if ("issues" in checked2) {
-    return { code: refuse11(err, checked2.issues), job: null };
+    return { code: refuse9(err, checked2.issues), job: null };
   }
   return launch3(checked2, wenv, {
     out,
@@ -15406,15 +15392,8 @@ function dispatchUnit(unit2, wenv, out, err) {
 }
 
 // bin/helpers/loop-dispatch-launch.ts
-var REFUSED5 = 1;
-var refuse12 = (err, issues) => {
-  for (const issue2 of issues)
-    err(issue2);
-  return REFUSED5;
-};
-var failedCode = (code) => code === 0 ? REFUSED5 : code;
+var failedCode = (code) => code === 0 ? REFUSED : code;
 var REFUSED_REASON = "the launch was refused";
-var messageOf11 = (e) => e instanceof Error ? e.message : String(e);
 var launchEnvOf = (lenv, tree) => ({
   ...lenv,
   runGit: tree.runGit
@@ -15459,7 +15438,7 @@ var countAttempt = (d, a, seen) => () => {
     return [];
   } catch (e) {
     return [
-      `recording the attempt failed, so dispatch launched nothing: ${messageOf11(e)}`
+      `recording the attempt failed, so dispatch launched nothing: ${messageOf4(e)}`
     ];
   }
 };
@@ -15490,7 +15469,7 @@ function launch4(d, a, seen, io) {
   }
 }
 function reportTimedOut(d, a, code, io) {
-  refuse12(io.err, [
+  refuse4(io.err, [
     `claude --bg did not return in time, so dispatch cannot tell whether worker ${a.worker} started. The attempt now counts: its dispatched line is written and its folder kept, so the next dispatch waits. Once you have checked for the worker, give up on the attempt with ${discardCommand(d.call)}`
   ]);
   return failedCode(code);
@@ -15507,26 +15486,26 @@ function closeRefused(d, a, result, { code, err }) {
       reason: REFUSED_REASON
     });
   } catch (e) {
-    refuse12(err, [
-      `${REFUSED_REASON}, but writing its discarded line failed: ${messageOf11(e)}`,
+    refuse4(err, [
+      `${REFUSED_REASON}, but writing its discarded line failed: ${messageOf4(e)}`,
       `the attempt stays in flight: give up on it with ${discardCommand(d.call)}`,
       ...fix
     ]);
     return failedCode(code);
   }
-  refuse12(err, [
+  refuse4(err, [
     `${REFUSED_REASON}, so dispatch closed the attempt of worker ${a.worker}, which still counts as one of unit ${d.call.unit}'s attempts`,
     ...fix
   ]);
   return failedCode(code);
 }
 function dropUncounted(a, { code, err }) {
-  refuse12(err, removeAttempt(a.written));
+  refuse4(err, removeAttempt(a.written));
   return failedCode(code);
 }
 function reportStarted(d, a, launched, io) {
   if (launched.code !== 0) {
-    return refuse12(io.err, [
+    return refuse4(io.err, [
       `the attempt stays in flight, since its dispatched line is written: give up on it with ${discardCommand(d.call)}`
     ]);
   }
@@ -15753,7 +15732,7 @@ var HEX_BYTES = 3;
 var ISSUE_NUMBER = /^[1-9][0-9]*$/;
 var usage3 = (err) => {
   err(`usage: ${DISPATCH_USAGE_LINE}`);
-  return REFUSED5;
+  return REFUSED;
 };
 var issueIssues = (text) => ISSUE_NUMBER.test(text) && Number.isSafeInteger(Number(text)) ? [] : [
   `--issue ${text}: must be an issue number, a whole number of at least 1`
@@ -15797,17 +15776,17 @@ function loopDispatch(rest2, lenv, out, err, {
   if (call === undefined)
     return usage3(err);
   if ("issues" in call)
-    return refuse12(err, call.issues);
+    return refuse4(err, call.issues);
   const env = envIssues(lenv.env, call.name, "dispatch");
   if (env.length > 0)
-    return refuse12(err, env);
+    return refuse4(err, env);
   const runGit = timed(lenv.runGit, gitTimeoutMs);
   const loop = loadLoop(call.name, { ...lenv, runGit });
   if ("issues" in loop)
-    return refuse12(err, loop.issues);
+    return refuse4(err, loop.issues);
   const lock = takeUnitsLock(loop.dir, lenv);
   if (lock.kind === "busy")
-    return refuse12(err, [lock.issue]);
+    return refuse4(err, [lock.issue]);
   const opts = { draw, draws, gitTimeoutMs, syncTimeoutMs };
   try {
     return underLock({ call, loop, lenv, runGit, opts }, { out, err });
@@ -15824,21 +15803,21 @@ function underLock(d, io) {
     lenv: d.lenv
   });
   if ("issues" in reaped)
-    return refuse12(io.err, reaped.issues);
+    return refuse4(io.err, reaped.issues);
   for (const line of reaped.lines)
     io.out(line);
   const counted2 = ledgerIssues(d.loop, d.call, d.lenv.now());
   if (counted2.length > 0)
-    return refuse12(io.err, counted2);
+    return refuse4(io.err, counted2);
   const ready = prepare(d);
   if ("issues" in ready)
-    return refuse12(io.err, ready.issues);
+    return refuse4(io.err, ready.issues);
   const placed = place(d, ready.tree);
   if ("issues" in placed)
-    return refuse12(io.err, placed.issues);
+    return refuse4(io.err, placed.issues);
   const named2 = drawName(d);
   if ("issues" in named2)
-    return refuse12(io.err, named2.issues);
+    return refuse4(io.err, named2.issues);
   const { worker } = named2;
   const written = writeAttempt({
     loopDir: d.loop.dir,
@@ -15855,7 +15834,7 @@ function underLock(d, io) {
     dispatchedAt: d.lenv.now()
   });
   if ("issues" in written)
-    return refuse12(io.err, written.issues);
+    return refuse4(io.err, written.issues);
   return launchAttempt(d, { worker, tree: ready.tree, written }, io);
 }
 function prepare(d) {
@@ -15916,7 +15895,6 @@ import * as path73 from "node:path";
 // bin/helpers/loop-report-read.ts
 import * as fs60 from "node:fs";
 var READ_NO_FOLLOW = fs60.constants.O_RDONLY | fs60.constants.O_NOFOLLOW | fs60.constants.O_NONBLOCK;
-var messageOf12 = (e) => e instanceof Error ? e.message : String(e);
 var codeOf = (e) => e instanceof Error && ("code" in e) && typeof e.code === "string" ? e.code : undefined;
 var notPlain = (file) => `a unit report must be a plain file inside its folder, so report prints nothing from ${file}`;
 function openNoFollow(file) {
@@ -15929,7 +15907,7 @@ function openNoFollow(file) {
     if (code === "ELOOP") {
       return { issues: [`${file} is a symbolic link`, notPlain(file)] };
     }
-    return { issues: [`cannot read ${file}: ${messageOf12(e)}`] };
+    return { issues: [`cannot read ${file}: ${messageOf4(e)}`] };
   }
 }
 function readUpTo(fd, limit) {
@@ -15978,7 +15956,7 @@ function readPlain(place2, maxBytes) {
   try {
     return readOpened(opened.fd, file, maxBytes);
   } catch (e) {
-    return { issues: [`cannot read ${file}: ${messageOf12(e)}`] };
+    return { issues: [`cannot read ${file}: ${messageOf4(e)}`] };
   } finally {
     fs60.closeSync(opened.fd);
   }
@@ -15986,18 +15964,10 @@ function readPlain(place2, maxBytes) {
 
 // bin/helpers/loop-report.ts
 var REPORT_USAGE_LINE = "sidekick loop report <name> --unit <id>";
-var REFUSED6 = 1;
 var PROPOSALS = /^##\s+Proposals\s*$/i;
 var KEY_BLOCK_END = /-----END[ A-Z0-9_-]{0,100}PRIVATE KEY(?: BLOCK)?-----/i;
 var GAP = "the report has no ## Proposals section, so it proposes no outward action: read that as a gap in the report, not as nothing to do";
-var KEPT_CONTROLS = new Set([`
-`, "\t"]);
 var HEX2 = 16;
-var refuse13 = (err, issues) => {
-  for (const issue2 of issues)
-    err(issue2);
-  return REFUSED6;
-};
 var print2 = (sink, lines) => {
   for (const line of lines)
     sink(line);
@@ -16068,7 +16038,7 @@ function readReport(worker, worktree, attempt, maxBytes) {
   };
 }
 var withheld = (ids) => `(withheld: ${ids.join(", ")})`;
-var visible = (text) => [...text].map((ch) => isControl(ch) && !KEPT_CONTROLS.has(ch) ? `\\x${ch.charCodeAt(0).toString(HEX2).padStart(2, "0")}` : ch).join("");
+var visible = (text) => [...text].map((ch) => isControl(ch) && !TEXT_CONTROLS.has(ch) ? `\\x${ch.charCodeAt(0).toString(HEX2).padStart(2, "0")}` : ch).join("");
 var visibleSink = (sink) => (line) => sink(visible(line));
 var shownWith = (line, ids) => ids.length === 0 ? line : withheld(ids);
 var shownLine = (line) => shownWith(line, keyHits(line));
@@ -16132,13 +16102,13 @@ function headLines(ctx, worker) {
 function printReport(ctx, call, io, maxBytes) {
   const found = reportedWorker(ctx, call.unit);
   if ("issues" in found)
-    return refuse13(io.err, found.issues);
+    return refuse4(io.err, found.issues);
   const { worker } = found;
   const worktree = nativeFolder(ctx.manifest.repo, worker);
   const attempt = attemptDir(ctx.loopDir, call.unit, worker);
   const read = readReport(worker, worktree, attempt, maxBytes);
   if ("issues" in read)
-    return refuse13(io.err, read.issues);
+    return refuse4(io.err, read.issues);
   const lines = linesOf(read.text);
   io.out(`report of unit ${call.unit} · worker ${worker}, from ${read.file}:`);
   print2(io.out, shownLines(lines));
@@ -16149,7 +16119,7 @@ function printReport(ctx, call, io, maxBytes) {
     print2(io.err, head2.issues);
   if (!lines.some((line) => PROPOSALS.test(line)))
     io.out(GAP);
-  return "issues" in head2 ? REFUSED6 : 0;
+  return "issues" in head2 ? REFUSED : 0;
 }
 function loopReport(rest2, lenv, rawOut, rawErr, { maxBytes = 1e5 } = {}) {
   const out = visibleSink(rawOut);
@@ -16157,7 +16127,7 @@ function loopReport(rest2, lenv, rawOut, rawErr, { maxBytes = 1e5 } = {}) {
   const call = parseReport2(rest2);
   if (call === undefined) {
     err(`usage: ${REPORT_USAGE_LINE}`);
-    return REFUSED6;
+    return REFUSED;
   }
   const early = [
     ...loopNameIssues(call.name),
@@ -16165,23 +16135,16 @@ function loopReport(rest2, lenv, rawOut, rawErr, { maxBytes = 1e5 } = {}) {
     ...envIssues(lenv.env, call.name, "report")
   ];
   if (early.length > 0)
-    return refuse13(err, early);
+    return refuse4(err, early);
   const ctx = unitContextOf(call.name, lenv);
   if ("issues" in ctx)
-    return refuse13(err, ctx.issues);
+    return refuse4(err, ctx.issues);
   const io = { out, err };
   return reapFirstOrWarn(ctx, io, () => printReport(ctx, call, io, maxBytes));
 }
 
 // bin/helpers/loop-resume.ts
 var RESUME_USAGE_LINE = "sidekick loop resume <name> --reason <text>";
-var REFUSED7 = 1;
-var refuse14 = (err, issues) => {
-  for (const issue2 of issues)
-    err(issue2);
-  return REFUSED7;
-};
-var messageOf13 = (e) => e instanceof Error ? e.message : String(e);
 function resumeEnvIssues(env, name) {
   const loop = env.SIDEKICK_LOOP;
   const isLoop = loop !== undefined && loop !== "";
@@ -16205,14 +16168,14 @@ function resumeTripped(ctx, call, out, err) {
   const now = ctx.lenv.now();
   const ledger = readLedger(ctx.loopDir, now);
   if ("issues" in ledger) {
-    return refuse14(err, [
+    return refuse4(err, [
       ...ledger.issues,
       "resume cannot read the loop's record, so it cannot count the units failed in a row"
     ]);
   }
   const { caps } = ctx.manifest;
   if (!breakerTripped(ledger.lines, caps)) {
-    return refuse14(err, [
+    return refuse4(err, [
       `the breaker has not tripped: ${failedInARow(ledger.lines)} units failed in a row, the cap is ${caps.failedUnitsInARow}, so resume has nothing to reset`
     ]);
   }
@@ -16224,8 +16187,8 @@ function resumeTripped(ctx, call, out, err) {
       reason: call.reason
     });
   } catch (e) {
-    return refuse14(err, [
-      `cannot write the record in ${ctx.loopDir}: ${messageOf13(e)}`
+    return refuse4(err, [
+      `cannot write the record in ${ctx.loopDir}: ${messageOf4(e)}`
     ]);
   }
   out(`loop ${call.name} resumed: the count of units failed in a row restarts at 0`);
@@ -16235,7 +16198,7 @@ function loopResume(rest2, lenv, out, err) {
   const call = parseResume(rest2);
   if (call === undefined) {
     err(`usage: ${RESUME_USAGE_LINE}`);
-    return REFUSED7;
+    return REFUSED;
   }
   const early = [
     ...loopNameIssues(call.name),
@@ -16243,10 +16206,10 @@ function loopResume(rest2, lenv, out, err) {
     ...resumeEnvIssues(lenv.env, call.name)
   ];
   if (early.length > 0)
-    return refuse14(err, early);
+    return refuse4(err, early);
   const ctx = unitContextOf(call.name, lenv);
   if ("issues" in ctx)
-    return refuse14(err, ctx.issues);
+    return refuse4(err, ctx.issues);
   return underUnitsLock(ctx, err, () => resumeTripped(ctx, call, out, err));
 }
 
@@ -16255,7 +16218,7 @@ import * as path74 from "node:path";
 var START_USAGE_LINE = "sidekick loop start (<name> | --all) [--record] [--now]";
 var HASH_SHOWN = 12;
 var MS_PER_S = 1000;
-var REFUSED8 = { kind: "refused" };
+var REFUSED2 = { kind: "refused" };
 var NO_LISTING = "start cannot tell a running loop from a stopped one without the listing, so it changed no loop.";
 var STARTS_PROCESS = new Set([
   "launch",
@@ -16297,7 +16260,7 @@ function refuseUnheld(seat, flags, lenv, err) {
   const tell = prefixed(err, seat.name);
   if (seat.kind === "busy") {
     tell(seat.issue);
-    return REFUSED8;
+    return REFUSED2;
   }
   const prepared = prepareLoop(seat.name, flags, { lenv, rows: [], err: tell });
   const lines = prepared.kind === "refused" ? prepared.lines : [
@@ -16305,7 +16268,7 @@ function refuseUnheld(seat, flags, lenv, err) {
   ];
   for (const line of lines)
     tell(line);
-  return REFUSED8;
+  return REFUSED2;
 }
 function commitEntries(p) {
   switch (p.kind) {
@@ -16346,7 +16309,7 @@ function actOnHeld(held, flags, lenv, io) {
   if ("issues" in listed) {
     for (const line of [...listed.issues, NO_LISTING])
       io.err(line);
-    return held.map((seat) => ({ name: seat.name, outcome: REFUSED8 }));
+    return held.map((seat) => ({ name: seat.name, outcome: REFUSED2 }));
   }
   const rows = listed.jobs;
   const prepared = held.map((seat) => ({
@@ -16460,12 +16423,6 @@ function runStart(rest2, lenv, out, err, {
 
 // bin/helpers/loop-wake.ts
 var WAKE_USAGE_LINE = "sidekick loop wake <name> --unit <id>";
-var REFUSED9 = 1;
-var refuse15 = (err, issues) => {
-  for (const issue2 of issues)
-    err(issue2);
-  return REFUSED9;
-};
 function parseWake(rest2) {
   const parsed = parseFlags(rest2, { unit: { type: "string" } });
   if (parsed === undefined || parsed.positionals.length !== 1)
@@ -16507,7 +16464,7 @@ function respawnWorker(ctx, call, worker, job, io) {
     wayOut: () => `To give up on the attempt instead, run ${discardCommand2(call)}, which stops the worker and closes the attempt.`
   });
   if (failed2.length > 0)
-    return refuse15(io.err, failed2);
+    return refuse4(io.err, failed2);
   io.out(`worker ${worker} was stopped, so wake respawned its job ${job}`);
   return 0;
 }
@@ -16517,17 +16474,17 @@ function wakeInFlight(ctx, call, io) {
     lacks: "has no worker to wake"
   });
   if ("issues" in open)
-    return refuse15(io.err, open.issues);
+    return refuse4(io.err, open.issues);
   const { worker } = open;
   if (worker === "") {
-    return refuse15(io.err, [
+    return refuse4(io.err, [
       `the attempt in flight for unit ${call.unit} names no worker, so wake has no session to respawn`
     ]);
   }
   const dir = attemptDir(ctx.loopDir, call.unit, worker);
   const found = workerRows(callAt(ctx.manifest.repo, ctx.lenv), dir, worker);
   if ("issues" in found) {
-    return refuse15(io.err, [
+    return refuse4(io.err, [
       ...found.issues,
       `wake cannot tell whether worker ${worker} still runs, so it respawns nothing`
     ]);
@@ -16540,7 +16497,7 @@ function wakeInFlight(ctx, call, io) {
     case "respawn":
       return respawnWorker(ctx, call, worker, choice.job, io);
     case "refused":
-      return refuse15(io.err, [choice.issue]);
+      return refuse4(io.err, [choice.issue]);
     default: {
       const unhandled = choice;
       throw new Error(`unhandled wake choice: ${JSON.stringify(unhandled)}`);
@@ -16551,7 +16508,7 @@ function loopWake(rest2, lenv, out, err) {
   const call = parseWake(rest2);
   if (call === undefined) {
     err(`usage: ${WAKE_USAGE_LINE}`);
-    return REFUSED9;
+    return REFUSED;
   }
   const early = [
     ...loopNameIssues(call.name),
@@ -16559,10 +16516,10 @@ function loopWake(rest2, lenv, out, err) {
     ...envIssues(lenv.env, call.name, "wake")
   ];
   if (early.length > 0)
-    return refuse15(err, early);
+    return refuse4(err, early);
   const ctx = unitContextOf(call.name, lenv);
   if ("issues" in ctx)
-    return refuse15(err, ctx.issues);
+    return refuse4(err, ctx.issues);
   const io = { out, err };
   return reapFirst(ctx, io, () => wakeInFlight(ctx, call, io));
 }
@@ -16576,7 +16533,7 @@ var usage4 = (err) => {
   err(`usage: ${LOOP_USAGE_LINE}`);
   return 1;
 };
-var refuse16 = (err, issues) => {
+var refuse10 = (err, issues) => {
   for (const issue2 of issues)
     err(issue2);
   return 1;
@@ -16754,7 +16711,7 @@ var show2 = (rest2, lenv, out, err) => {
   const [name] = parsed.positionals;
   const refusal2 = nameRefusal(name);
   if (refusal2 !== undefined)
-    return refuse16(err, [refusal2]);
+    return refuse10(err, [refusal2]);
   const check2 = checkLoop(name, depsOf2(lenv));
   const listing = listingOf(check2, lenv);
   const definition = definitionLines(path75.join(check2.dir, LOOP_FILE), check2.manifest);
@@ -16935,21 +16892,21 @@ var record2 = (rest2, lenv, out, err) => {
     return usage4(err);
   const refusals = argRefusals(call);
   if (refusals.length > 0)
-    return refuse16(err, refusals);
+    return refuse10(err, refusals);
   const dir = loopDirOf(lenv, call.name);
   const basis = basisOf(dir);
   if (!basis.ok)
-    return refuse16(err, basis.issues);
+    return refuse10(err, basis.issues);
   const built = lineOf2(call.args, lenv.now(), basis.hash);
   if ("issues" in built)
-    return refuse16(err, built.issues);
+    return refuse10(err, built.issues);
   const { line } = built;
   const mandate = mandateRefusals(basis.mandate, line);
   if (mandate.length > 0)
-    return refuse16(err, mandate);
+    return refuse10(err, mandate);
   const cron = parseCron(basis.schedule);
   if (!cron.ok) {
-    return refuse16(err, [`${basis.mandate.file}: schedule: ${cron.issue}`]);
+    return refuse10(err, [`${basis.mandate.file}: schedule: ${cron.issue}`]);
   }
   return appendLocked({ name: call.name, dir, line, cron: cron.cron }, lenv, {
     out,
@@ -16959,7 +16916,7 @@ var record2 = (rest2, lenv, out, err) => {
 function appendLocked(w, lenv, io) {
   const lock = takeUnitsLock(w.dir, lenv);
   if (lock.kind === "busy")
-    return refuse16(io.err, [lock.issue]);
+    return refuse10(io.err, [lock.issue]);
   try {
     reapInFlight(w.name, w.dir, lenv, io);
     const line = { ...w.line, at: lenv.now().toISOString() };
@@ -16999,7 +16956,7 @@ import * as path77 from "node:path";
 // bin/helpers/memory-link.ts
 import * as fs61 from "node:fs";
 import * as path76 from "node:path";
-var messageOf14 = (error) => error instanceof Error ? error.message : String(error);
+var messageOf8 = (error) => error instanceof Error ? error.message : String(error);
 function runLink(opts, deps, out, err) {
   const gathered = gather2(opts, deps);
   if ("issue" in gathered) {
@@ -17036,7 +16993,7 @@ function gather2(opts, deps) {
   try {
     return { facts: gatherFacts(opts, deps) };
   } catch (error) {
-    return { issue: messageOf14(error) };
+    return { issue: messageOf8(error) };
   }
 }
 function applyAll(actions, runGit, out, err) {
@@ -17056,7 +17013,7 @@ function applyAction(action, runGit) {
   try {
     return runAction(action, runGit);
   } catch (error) {
-    return { ok: false, issue: messageOf14(error) };
+    return { ok: false, issue: messageOf8(error) };
   }
 }
 function runAction(action, runGit) {
@@ -17133,7 +17090,7 @@ function claim(from, to) {
   try {
     fs61.mkdirSync(to);
   } catch (error) {
-    const message = hasCode(error, "EEXIST") ? `${to} already exists, so link copied nothing into it and left ${from} intact. A re-run picks another archive name.` : `link could not create ${to}, so it copied nothing and left ${from} intact: ${messageOf14(error)}`;
+    const message = hasCode(error, "EEXIST") ? `${to} already exists, so link copied nothing into it and left ${from} intact. A re-run picks another archive name.` : `link could not create ${to}, so it copied nothing and left ${from} intact: ${messageOf8(error)}`;
     throw new Error(message, { cause: error });
   }
 }
@@ -17141,7 +17098,7 @@ function copyInto(from, to, copy, remove) {
   try {
     copy(from, to);
   } catch (error) {
-    const reason8 = messageOf14(error);
+    const reason8 = messageOf8(error);
     const failed2 = `copying across filesystems failed, so link left ${from} intact`;
     const leftover = removeOrSayWhy(to, remove);
     const message = leftover === undefined ? `${failed2} and removed its partial copy at ${to}: ${reason8}` : `${failed2}: ${reason8}. link could not remove its partial copy either, so delete ${to} by hand: ${leftover}`;
@@ -17153,7 +17110,7 @@ function removeOrSayWhy(folder, remove) {
     remove(folder);
     return;
   } catch (error) {
-    return messageOf14(error);
+    return messageOf8(error);
   }
 }
 function keepIfChanged(from, to) {
@@ -17186,7 +17143,7 @@ function removeSource(from, to, remove) {
   try {
     remove(from);
   } catch (error) {
-    throw new Error(`the copy at ${to} is whole, but removing ${from} failed: ${messageOf14(error)}. Keep ${to}; a re-run archives what is left of ${from}.`, { cause: error });
+    throw new Error(`the copy at ${to} is whole, but removing ${from} failed: ${messageOf8(error)}. Keep ${to}; a re-run archives what is left of ${from}.`, { cause: error });
   }
 }
 function commit2(action, runGit) {
@@ -18221,7 +18178,7 @@ var usage5 = (err) => {
   err(`usage: ${WORKER_USAGE_LINE}`);
   return 1;
 };
-var refuse17 = (err, lines) => {
+var refuse11 = (err, lines) => {
   for (const line of lines)
     err(line);
   return 1;
@@ -18242,7 +18199,7 @@ var finishVerb = (rest2, wenv, out, err) => {
   if (args === undefined)
     return usage5(err);
   if ("usageErrors" in args)
-    return refuse17(err, args.usageErrors);
+    return refuse11(err, args.usageErrors);
   return finish(args, wenv, out, err);
 };
 var VERBS5 = {
@@ -18312,7 +18269,7 @@ function parseMoveArgs(rest2) {
     return;
   return { kind: "branch", branch: positionals[0], from };
 }
-var refuse18 = (...lines) => ({ kind: "refused", lines });
+var refuse12 = (...lines) => ({ kind: "refused", lines });
 var ORIGIN2 = "origin";
 var SEPARATOR = " · ";
 var PATHS_CAP = 20;
@@ -18333,21 +18290,21 @@ function whereItRuns(env, err) {
   if (repo === undefined) {
     const issue2 = found.revParseIssue;
     if (issue2 !== undefined && !outsideRepo(issue2, env.cwd)) {
-      return refuse18(`git rev-parse failed in ${env.cwd}, so move found no repository: ${issue2}`, `fix what git reports, ${AGAIN_WAY}`);
+      return refuse12(`git rev-parse failed in ${env.cwd}, so move found no repository: ${issue2}`, `fix what git reports, ${AGAIN_WAY}`);
     }
-    return refuse18(`move found no repository at ${env.cwd}: ${INSIDE_WAY}`);
+    return refuse12(`move found no repository at ${env.cwd}: ${INSIDE_WAY}`);
   }
   const checkout = checkoutOf(env.runGit, env.cwd);
   if ("issue" in checkout) {
-    return refuse18(`${env.cwd} is in no work tree, as git says: ${gitWords(checkout.issue)}`, INSIDE_WAY);
+    return refuse12(`${env.cwd} is in no work tree, as git says: ${gitWords(checkout.issue)}`, INSIDE_WAY);
   }
   const top = physical(checkout.top);
   const at2 = repo.worktrees.findIndex((entry2) => physical(entry2.path) === top);
   if (at2 === 0) {
-    return refuse18(`${checkout.top} is the main checkout, not a linked worktree: ${INSIDE_WAY}`);
+    return refuse12(`${checkout.top} is the main checkout, not a linked worktree: ${INSIDE_WAY}`);
   }
   if (at2 === -1) {
-    return refuse18(`git lists no worktree at ${checkout.top}: ${INSIDE_WAY}`);
+    return refuse12(`git lists no worktree at ${checkout.top}: ${INSIDE_WAY}`);
   }
   const entry = repo.worktrees[at2];
   return { repo, entry, name: path79.basename(entry.path) };
@@ -18387,16 +18344,16 @@ function rerunLine(runGit, place2, args) {
 function workerRefusal(env, place2) {
   const brief = env.env.SIDEKICK_WORKER;
   if (brief !== undefined && brief !== "") {
-    return refuse18(`this session is a worker, as SIDEKICK_WORKER is set to ${brief}: ${BRIEF_WAY}`);
+    return refuse12(`this session is a worker, as SIDEKICK_WORKER is set to ${brief}: ${BRIEF_WAY}`);
   }
   const stored = readRecords(place2.repo.commonDir);
   const record3 = stored.records.find((candidate) => isWorkers(place2.repo.top, candidate.name, place2.entry));
   if (record3 !== undefined) {
-    return refuse18(`${place2.entry.path} is the worker ${record3.name}'s worktree: ${BRIEF_WAY}`);
+    return refuse12(`${place2.entry.path} is the worker ${record3.name}'s worktree: ${BRIEF_WAY}`);
   }
   if (stored.warnings.length === 0)
     return;
-  return refuse18(`a worker record would not read, so ${place2.entry.path} may be that worker's worktree: ${stored.warnings.join("; ")}`, `fix or remove the named record, ${AGAIN_WAY}`);
+  return refuse12(`a worker record would not read, so ${place2.entry.path} may be that worker's worktree: ${stored.warnings.join("; ")}`, `fix or remove the named record, ${AGAIN_WAY}`);
 }
 function branchRefusal(place2) {
   const { entry, name } = place2;
@@ -18404,15 +18361,15 @@ function branchRefusal(place2) {
   if (entry.branch === `${HEADS}${own}`)
     return;
   if (entry.branch === undefined) {
-    return refuse18(`${entry.path} has a detached HEAD at ${entry.head ?? "no commit"}, not ${own}`, FRESH_WAY);
+    return refuse12(`${entry.path} has a detached HEAD at ${entry.head ?? "no commit"}, not ${own}`, FRESH_WAY);
   }
-  return refuse18(`${entry.path} is on ${shortBranch(entry.branch)}, not ${own}`, FRESH_WAY);
+  return refuse12(`${entry.path} is on ${shortBranch(entry.branch)}, not ${own}`, FRESH_WAY);
 }
 function changesRefusal(runGit, place2) {
   const { entry } = place2;
   const status = statusEntriesIn(runGit, place2.repo.top, entry.path);
   if ("issue" in status) {
-    return refuse18(`git status failed in ${entry.path}, so move cannot tell whether it has changes: ${gitWords(status.issue)}`, `check git status in ${entry.path}, ${AGAIN_WAY}`);
+    return refuse12(`git status failed in ${entry.path}, so move cannot tell whether it has changes: ${gitWords(status.issue)}`, `check git status in ${entry.path}, ${AGAIN_WAY}`);
   }
   if (status.entries.length === 0)
     return;
@@ -18421,7 +18378,7 @@ function changesRefusal(runGit, place2) {
     kind: "exact",
     count: Math.max(0, paths.length - PATHS_CAP)
   };
-  return refuse18(`${entry.path} has tracked or untracked changes: ${paths.slice(0, PATHS_CAP).join(", ")}${omittedWords(omitted)}`, `take them out of the worktree or delete them, ${AGAIN_WAY}`);
+  return refuse12(`${entry.path} has tracked or untracked changes: ${paths.slice(0, PATHS_CAP).join(", ")}${omittedWords(omitted)}`, `take them out of the worktree or delete them, ${AGAIN_WAY}`);
 }
 var commitCount = (count2) => `${count2} ${count2 === 1 ? "commit" : "commits"}`;
 function onTopWords(runGit, dir, base, head2) {
@@ -18438,22 +18395,22 @@ function freshHead(runGit, place2) {
   const { entry, name } = place2;
   const created = creationCommit(runGit, entry.path, entry.branch);
   if ("issue" in created) {
-    return refuse18(`move cannot tell whether ${entry.path} is fresh: ${created.issue}`, FRESH_WAY);
+    return refuse12(`move cannot tell whether ${entry.path} is fresh: ${created.issue}`, FRESH_WAY);
   }
   if (entry.head === created.sha)
     return created.sha;
   const head2 = entry.head ?? "no commit";
   const onTop = onTopWords(runGit, entry.path, created.sha, head2);
-  return refuse18(`the HEAD of ${entry.path} is ${head2}, not ${nativeBranch(name)}'s creation commit ${created.sha}${onTop}`, FRESH_WAY);
+  return refuse12(`the HEAD of ${entry.path} is ${head2}, not ${nativeBranch(name)}'s creation commit ${created.sha}${onTop}`, FRESH_WAY);
 }
 function nameRefusal2(runGit, dir, branch) {
   const verdict = branchNameOf(runGit, dir, branch);
   if ("issue" in verdict) {
-    return refuse18(`git check-ref-format refuses ${branch}: ${verdict.issue}`, "choose another name");
+    return refuse12(`git check-ref-format refuses ${branch}: ${verdict.issue}`, "choose another name");
   }
   if (verdict.read === branch)
     return;
-  return refuse18(`git reads ${branch} as the branch ${verdict.read}: name it as ${verdict.read}`);
+  return refuse12(`git reads ${branch} as the branch ${verdict.read}: name it as ${verdict.read}`);
 }
 function branchNameOf(runGit, dir, name) {
   const result = runGit("git", ["check-ref-format", "--branch", name], dir);
@@ -18469,7 +18426,7 @@ function isPlainBranchName(runGit, dir, name) {
 function remotesOf(runGit, dir) {
   const result = runGit("git", ["remote"], dir);
   if (result.code !== 0) {
-    return refuse18(`git remote failed in ${dir}: ${gitWords(result.stderr)}`, `check git remote in ${dir}, ${AGAIN_WAY}`);
+    return refuse12(`git remote failed in ${dir}: ${gitWords(result.stderr)}`, `check git remote in ${dir}, ${AGAIN_WAY}`);
   }
   return result.stdout.split(`
 `).map((line) => line.trim()).filter((line) => line !== "");
@@ -18480,24 +18437,24 @@ function ambiguityRefusal(branch, remotes) {
   if (remote === undefined)
     return;
   if (remote === branch) {
-    return refuse18(`${branch} is a remote's name, so it reads as that remote: choose another name`);
+    return refuse12(`${branch} is a remote's name, so it reads as that remote: choose another name`);
   }
   const rest2 = branch.slice(remote.length + 1);
-  return refuse18(`${branch} begins with ${remote}/, a remote's name, so it reads as a branch of ${remote}: name it without the remote, as ${rest2}`);
+  return refuse12(`${branch} begins with ${remote}/, a remote's name, so it reads as a branch of ${remote}: name it without the remote, as ${rest2}`);
 }
-var fromRefusal = (branch, where) => refuse18(`${branch} exists${where}, and --from asks move to create it: drop --from to move onto it`);
+var fromRefusal = (branch, where) => refuse12(`${branch} exists${where}, and --from asks move to create it: drop --from to move onto it`);
 function ownNameRefusal(runGit, place2, heldAt, branch) {
   const { entry, name } = place2;
   const verdict = branchNameOf(runGit, entry.path, name);
   if ("read" in verdict && verdict.read === name)
     return;
   const why = "issue" in verdict ? `git refuses ${name} as a branch name: ${verdict.issue}` : `git reads ${name} as the branch ${verdict.read}`;
-  return refuse18(`${heldAt} holds ${branch}, so move would create a branch named for this worktree, ${name}, but ${why}`, `start a worktree under a name git takes as a branch and run move there, or land the work onto ${branch} from another worktree`);
+  return refuse12(`${heldAt} holds ${branch}, so move would create a branch named for this worktree, ${name}, but ${why}`, `start a worktree under a name git takes as a branch and run move there, or land the work onto ${branch} from another worktree`);
 }
 function localPlan(runGit, place2, branch) {
   const { entry, name } = place2;
   if (branch === nativeBranch(name)) {
-    return refuse18(`${branch} is the branch Claude Code made for this worktree, which move replaces: name the branch to move onto`);
+    return refuse12(`${branch} is the branch Claude Code made for this worktree, which move replaces: name the branch to move onto`);
   }
   const holder = place2.repo.worktrees.find((other) => other.branch === `${HEADS}${branch}`);
   if (holder === undefined)
@@ -18507,10 +18464,10 @@ function localPlan(runGit, place2, branch) {
     return badName;
   const sha = commitOf(runGit, entry.path, `${HEADS}${branch}`);
   if (sha === undefined) {
-    return refuse18(`${branch} names no commit, so move cannot branch from it`, `check ${branch} in ${holder.path}, ${AGAIN_WAY}`);
+    return refuse12(`${branch} names no commit, so move cannot branch from it`, `check ${branch} in ${holder.path}, ${AGAIN_WAY}`);
   }
   if (branchExists(runGit, entry.path, name)) {
-    return refuse18(`${holder.path} holds ${branch}, so move would create the branch ${name} at its commit, but ${name} exists`, `switch ${holder.path} to another branch, or start a worktree under another name, ${AGAIN_WAY}`);
+    return refuse12(`${holder.path} holds ${branch}, so move would create the branch ${name} at its commit, but ${name} exists`, `switch ${holder.path} to another branch, or start a worktree under another name, ${AGAIN_WAY}`);
   }
   return { kind: "held", branch, own: name, sha, heldAt: holder.path };
 }
@@ -18520,7 +18477,7 @@ function onOrigin(runGit, dir, branch) {
   if (result.code === NO_MATCH)
     return false;
   if (result.code !== 0) {
-    return refuse18(`git ls-remote origin failed, so move cannot tell whether origin has ${branch}: ${gitWords(result.stderr)}`, `check the remote origin, ${AGAIN_WAY}`);
+    return refuse12(`git ls-remote origin failed, so move cannot tell whether origin has ${branch}: ${gitWords(result.stderr)}`, `check the remote origin, ${AGAIN_WAY}`);
   }
   return result.stdout.split(`
 `).some((line) => line.split("\t")[1] === ref2);
@@ -18536,7 +18493,7 @@ function baseOf(runGit, dir, from, remotes) {
   }
   const sha = commitOf(runGit, dir, from);
   if (sha === undefined) {
-    return refuse18(`--from ${from} names no commit: give a branch, tag, or commit, or <remote>/<branch> for a remote's branch`);
+    return refuse12(`--from ${from} names no commit: give a branch, tag, or commit, or <remote>/<branch> for a remote's branch`);
   }
   return { kind: "local", rev: from, sha };
 }
@@ -18579,7 +18536,7 @@ function prMove(runGit, place2, number2) {
     return remotes;
   if (remotes.includes(ORIGIN2))
     return { kind: "pr", number: number2 };
-  return refuse18(`--pr reads pull requests from origin, and this repository has no remote named origin: add the GitHub remote as origin, ${AGAIN_WAY}`);
+  return refuse12(`--pr reads pull requests from origin, and this repository has no remote named origin: add the GitHub remote as origin, ${AGAIN_WAY}`);
 }
 function checkMove(args, env, err) {
   const { runGit } = env;
@@ -18933,7 +18890,7 @@ function parseRemoveArgs(rest2) {
     into: into.at(0)
   };
 }
-var refuse19 = (...lines) => ({ refused: lines });
+var refuse13 = (...lines) => ({ refused: lines });
 var INTO_WAY = "name a local branch, such as main, or a remote-tracking ref, such as origin/main";
 function refCommit(runGit, top, ref2) {
   const shown2 = runGit("git", ["show-ref", "--verify", "--hash", ref2], top);
@@ -18949,7 +18906,7 @@ function intoTargets(runGit, top, into) {
     if (sha !== undefined)
       return [{ name: into, sha, ref: ref2 }];
   }
-  return refuse19(`--into ${into} names no local branch and no remote-tracking ref, so remove took nothing`, INTO_WAY);
+  return refuse13(`--into ${into} names no local branch and no remote-tracking ref, so remove took nothing`, INTO_WAY);
 }
 function ownIntoLines(targets, entry) {
   return targets.filter((target) => target.ref === entry.branch).map((target) => `--into ${target.name} is the branch ${entry.path} is on, which holds its head whether or not the work landed, so it cannot show the work landed there: name the branch it should land in`);
@@ -18963,18 +18920,18 @@ function resolveTarget3(repo, cwd, target) {
   const asPath = path80.resolve(cwd, target);
   const matches = repo.worktrees.filter((entry2) => path80.basename(entry2.path) === target || samePath(entry2.path, asPath));
   if (matches.length === 0) {
-    return refuse19(`no worktree is named ${target} or sits at ${asPath}: sidekick worktree list names each one`);
+    return refuse13(`no worktree is named ${target} or sits at ${asPath}: sidekick worktree list names each one`);
   }
   if (matches.length > 1) {
     const paths = matches.map((entry2) => entry2.path).join(", ");
-    return refuse19(`${matches.length} worktrees match ${target}: ${paths}. Name one by its path`);
+    return refuse13(`${matches.length} worktrees match ${target}: ${paths}. Name one by its path`);
   }
   const [entry] = matches;
   if (entry === repo.worktrees[0]) {
-    return refuse19(`${entry.path} is the main checkout, which remove never takes`);
+    return refuse13(`${entry.path} is the main checkout, which remove never takes`);
   }
   if (insideOf(cwd, entry.path)) {
-    return refuse19(`remove runs inside ${entry.path}, so it cannot take that worktree. Leave it first: in a Claude Code session, ExitWorktree with keep, or, when ExitWorktree finds no worktree session to leave, close the session; in a shell, cd out. Then run remove from the main checkout`);
+    return refuse13(`remove runs inside ${entry.path}, so it cannot take that worktree. Leave it first: in a Claude Code session, ExitWorktree with keep, or, when ExitWorktree finds no worktree session to leave, close the session; in a shell, cd out. Then run remove from the main checkout`);
   }
   return entry;
 }
@@ -19057,13 +19014,13 @@ function backupKind(commits, branch, judging) {
         return "kept";
       if (discard2)
         return "discarded";
-      return refuse19(`${where} has ${commitCount2(commits.count)} found ${nowhereWords(extra)}, as of the last fetch, so remove took nothing`, DISCARD_WAY);
+      return refuse13(`${where} has ${commitCount2(commits.count)} found ${nowhereWords(extra)}, as of the last fetch, so remove took nothing`, DISCARD_WAY);
     case "unknown":
       if (stays)
         return "kept";
       if (discard2)
         return "discarded";
-      return refuse19(`remove cannot tell where the commits of ${where} live, as ${commits.why}, so it took nothing`, DISCARD_WAY);
+      return refuse13(`remove cannot tell where the commits of ${where} live, as ${commits.why}, so it took nothing`, DISCARD_WAY);
     default: {
       const _exhaustive = commits;
       throw new Error(`Unhandled commits: ${JSON.stringify(_exhaustive)}`);
@@ -19075,7 +19032,7 @@ function branchPlan2(env, repo, row2, judging) {
   const { entry, name } = row2;
   const head2 = entry.head === undefined ? undefined : commitOf(env.runGit, repo.top, entry.head);
   if (head2 === undefined) {
-    return refuse19(`git lists no commit for ${entry.path}, so remove cannot keep a backup ref, and took nothing`);
+    return refuse13(`git lists no commit for ${entry.path}, so remove cannot keep a backup ref, and took nothing`);
   }
   const branch = entry.branch?.replace(HEADS, "");
   const stays = branch !== undefined && !isOwnBranch(env.runGit, repo.top, branch, name);
@@ -19107,13 +19064,13 @@ function checkTarget(args, env, repo, out) {
     return entry;
   const ownInto = ownIntoLines(extra, entry);
   if (ownInto.length > 0)
-    return refuse19(...ownInto);
+    return refuse13(...ownInto);
   const nested = nestedLines(repo, entry);
   if (nested.length > 0)
-    return refuse19(...nested);
+    return refuse13(...nested);
   const { src, listing, skipWarnings } = readSources(env, alone(repo, entry));
   if ("error" in listing) {
-    return refuse19(`claude agents failed, so remove cannot tell whether a session is in ${entry.path}, and took nothing: ${listing.error}`);
+    return refuse13(`claude agents failed, so remove cannot tell whether a session is in ${entry.path}, and took nothing: ${listing.error}`);
   }
   for (const warning of [...listing.warnings, ...skipWarnings]) {
     out(warning);
@@ -19121,7 +19078,7 @@ function checkTarget(args, env, repo, out) {
   const [row2] = worktreeRows(src, env.runGit, extra);
   const kept = stateLines(row2.state, entry, skipListPath(repo.commonDir));
   if (kept.length > 0)
-    return refuse19(...kept);
+    return refuse13(...kept);
   const checked2 = branchPlan2(env, repo, row2, { discard: args.discard, extra });
   if ("refused" in checked2)
     return checked2;
@@ -19139,25 +19096,25 @@ function movedLines(entry, head2, stopped) {
 function recheck(env, repo, checked2) {
   const { src, listing } = readSources(env, repo);
   if ("error" in listing) {
-    return refuse19(`claude agents failed on the second look, so remove deleted nothing: ${listing.error}`);
+    return refuse13(`claude agents failed on the second look, so remove deleted nothing: ${listing.error}`);
   }
   const now = listWorktrees(env.runGit, repo.top);
   if ("issue" in now) {
-    return refuse19(`git worktree list failed, so remove deleted nothing: ${now.issue}`);
+    return refuse13(`git worktree list failed, so remove deleted nothing: ${now.issue}`);
   }
   const entry = now.worktrees.find((e) => samePath(e.path, checked2.entry.path));
   if (entry === undefined) {
-    return refuse19(`git no longer lists ${checked2.entry.path}, so remove deleted nothing`);
+    return refuse13(`git no longer lists ${checked2.entry.path}, so remove deleted nothing`);
   }
   const moved = movedLines(entry, checked2.head, "so remove deleted nothing");
   if (moved.length > 0)
-    return refuse19(...moved);
+    return refuse13(...moved);
   const lock = lockStateOf(entry.locked, env.isAlive);
   const one = { ...src, repo: alone(repo, entry) };
   const state = stateOf3(one, env.runGit, entry, lock);
   const kept = stateLines(state, entry, skipListPath(repo.commonDir));
   if (kept.length > 0)
-    return refuse19(...kept);
+    return refuse13(...kept);
   return listing.rows;
 }
 

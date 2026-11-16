@@ -12,6 +12,7 @@
 import type { LoopEnv } from './loop.js';
 import { discardAttempt } from './loop-discard.js';
 import { envIssues } from './loop-dispatch-checks.js';
+import { type Io, type Out, REFUSED, refuse } from './loop-io.js';
 import { reapFirst } from './loop-reap.js';
 import {
   attemptInFlight,
@@ -25,16 +26,6 @@ import { parseFlags } from './profile.js';
 
 export const DISCARD_USAGE_LINE =
   'sidekick loop discard <name> --unit <id> --reason <text> [--failed]';
-
-type Out = (line: string) => void;
-type Io = { out: Out; err: Out };
-
-const REFUSED = 1;
-
-const refuse = (err: Out, issues: string[]): number => {
-  for (const issue of issues) err(issue);
-  return REFUSED;
-};
 
 interface DiscardCall {
   name: string;

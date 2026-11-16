@@ -15,8 +15,9 @@ import { localMinute } from './local-date.js';
 import type { LoopEnv } from './loop.js';
 import { RULINGS_FILE } from './loop-dispatch-attempt.js';
 import { envIssues } from './loop-dispatch-checks.js';
+import { type Io, messageOf, type Out, REFUSED, refuse } from './loop-io.js';
 import { reapFirst } from './loop-reap.js';
-import { appendRecord, isControl } from './loop-record.js';
+import { appendRecord, isControl, TEXT_CONTROLS } from './loop-record.js';
 import { sessionOf } from './loop-start-prepare.js';
 import {
   attemptInFlight,
@@ -31,25 +32,12 @@ import { parseFlags } from './profile.js';
 export const ANSWER_USAGE_LINE =
   'sidekick loop answer <name> --unit <id> <text>';
 
-type Out = (line: string) => void;
-type Io = { out: Out; err: Out };
-
-const REFUSED = 1;
-const ALLOWED_CONTROLS = new Set(['\n', '\t']);
 // The rulings file sits in the operator's store, so a link planted there is never followed.
 const APPEND_NO_FOLLOW =
   fs.constants.O_WRONLY |
   fs.constants.O_APPEND |
   fs.constants.O_CREAT |
   fs.constants.O_NOFOLLOW;
-
-const refuse = (err: Out, issues: string[]): number => {
-  for (const issue of issues) err(issue);
-  return REFUSED;
-};
-
-const messageOf = (e: unknown): string =>
-  e instanceof Error ? e.message : String(e);
 
 // Unicode's notation: at least four hex digits.
 const codePointName = (ch: string): string =>
@@ -76,9 +64,7 @@ function parseAnswer(rest: string[]): AnswerCall | undefined {
 function textIssues(text: string, maxChars: number): string[] {
   if (text.trim() === '') return ['the text is empty: write the ruling in it'];
   const chars = [...text];
-  const refused = chars.filter(
-    (ch) => isControl(ch) && !ALLOWED_CONTROLS.has(ch),
-  );
+  const refused = chars.filter((ch) => isControl(ch) && !TEXT_CONTROLS.has(ch));
   const controls = [...new Set(refused.map(codePointName))];
   const ids = keyHits(text);
   return [

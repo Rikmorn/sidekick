@@ -12,6 +12,7 @@
 
 import type { LoopEnv } from './loop.js';
 import { envIssues } from './loop-dispatch-checks.js';
+import { messageOf, type Out, REFUSED, refuse } from './loop-io.js';
 import { appendRecord } from './loop-record.js';
 import {
   loopNameIssues,
@@ -24,18 +25,6 @@ import { breakerTripped, failedInARow, readLedger } from './loop-units.js';
 import { parseFlags } from './profile.js';
 
 export const RESUME_USAGE_LINE = 'sidekick loop resume <name> --reason <text>';
-
-type Out = (line: string) => void;
-
-const REFUSED = 1;
-
-const refuse = (err: Out, issues: string[]): number => {
-  for (const issue of issues) err(issue);
-  return REFUSED;
-};
-
-const messageOf = (e: unknown): string =>
-  e instanceof Error ? e.message : String(e);
 
 // What in the environment refuses `resume`: a worker's marker, as for every
 // unit verb, and any loop's name, its own included, since the reset is the

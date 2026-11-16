@@ -9,6 +9,7 @@
 import * as path from 'node:path';
 import * as v from 'valibot';
 import type { LoopEnv } from './loop.js';
+import { REFUSED } from './loop-io.js';
 import {
   LOOP_FILE,
   type LoopManifest,
@@ -29,8 +30,6 @@ import { keyHits } from './memory-patterns.js';
 import { isProfileName, PROFILE_NAME_RULE } from './profile-manifest.js';
 import { isFolder } from './profile-role.js';
 import { type Job, listJobs } from './worker-jobs.js';
-
-const REFUSED = 1;
 
 /** One loop as a unit verb sees it. */
 export interface UnitContext {
