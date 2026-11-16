@@ -136,6 +136,17 @@ describe('fetchUnitIssue', () => {
     expect('issue' in r).toBe(true);
   });
 
+  test('a renames list shorter than its count refuses, since it cannot vouch for the renames it leaves out', () => {
+    for (const nodes of [[], [{ actor: who(ME) }]]) {
+      const r = fetchWith(issueOf({ renames: { totalCount: 2, nodes } }));
+      expect(r).toEqual({
+        issues: [
+          `issue #7 lists ${nodes.length} of its 2 title renames, so dispatch cannot tell who made the rest`,
+        ],
+      });
+    }
+  });
+
   test('more than 100 renames refuses, naming the cap', () => {
     const r = fetchWith(
       issueOf({

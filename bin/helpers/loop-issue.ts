@@ -190,6 +190,13 @@ export function fetchUnitIssue(
           `issue #${issue} has more than ${COMMENT_CAP} title renames, the most a unit reads`,
         ]
       : []),
+    // A rename the list leaves out passes `every` unread, so a short list refuses.
+    ...(found.renames.totalCount <= COMMENT_CAP &&
+    found.renames.nodes.length !== found.renames.totalCount
+      ? [
+          `issue #${issue} lists ${found.renames.nodes.length} of its ${found.renames.totalCount} title renames, so dispatch cannot tell who made the rest`,
+        ]
+      : []),
     ...(found.comments.totalCount > COMMENT_CAP
       ? [
           `issue #${issue} has more than ${COMMENT_CAP} comments, the most a unit reads`,
