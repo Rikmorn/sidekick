@@ -2,6 +2,8 @@
 
 `sidekick worktree list` answers "keep or remove?" for every linked worktree of the repo, and says who works in the main checkout. It is read-only, and runs from the main checkout or any linked worktree. It exits 0 when it ran and 1 on a usage error or a git failure. `sidekick worktree move` puts a fresh worktree on the branch its work belongs on, as "What `move` does" says. `sidekick worktree remove` removes one worktree that `list` shows as `removable` or `folder gone`, as "What `remove` does" says.
 
+Every git call the three verbs make carries the hardened flags `references/workers.md` §Hardened git names, since a worktree they inspect may be a leftover unit worker's. So a row no longer reads work inside an embedded repo as dirty. git itself still refuses to remove a worktree whose index holds an embedded repo, as measured on git 2.50.1 on 2026-11-16. A move's `switch` runs no hook either.
+
 ## What `list` prints
 
 After any warnings, the first line is the main checkout's. Then comes one line per linked worktree. Fields join with ` · `:
