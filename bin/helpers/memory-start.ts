@@ -42,6 +42,7 @@ import {
   type ViewDeps,
 } from './memory-view.js';
 import type { Runner } from './pm-data.js';
+import { isUnitWorker } from './unit-worker.js';
 import { briefWorkstreamOf, readBrief } from './worker-brief.js';
 
 export type { StartParts, StartSource } from './memory-start-render.js';
@@ -121,15 +122,6 @@ function briefWorkstream(env: NodeJS.ProcessEnv): string | undefined {
   if (file === undefined) return undefined;
   const read = readBrief(file);
   return 'brief' in read ? briefWorkstreamOf(read.brief) : undefined;
-}
-
-// A unit worker reads issue text, so its start prints nothing and starts no
-// snapshot. An unreadable brief counts as no unit.
-function isUnitWorker(env: NodeJS.ProcessEnv): boolean {
-  const file = workerBrief(env);
-  if (file === undefined) return false;
-  const read = readBrief(file);
-  return 'brief' in read && read.brief.kind === 'unit';
 }
 
 function staleLockWarning(store: string, now: number): string[] {
@@ -254,7 +246,10 @@ function missingSettingText(
 
 function gather(stdin: string, deps: StartDeps): StartResult {
   const event = parseEvent(stdin);
-  if (event === undefined || isUnitWorker(deps.env)) return {};
+  // A unit worker reads issue text, so its start prints nothing and starts no snapshot.
+  if (event === undefined || isUnitWorker(deps.env, event.cwd, deps.home)) {
+    return {};
+  }
   const view = repoView(event.cwd, deps);
   const base = { sessionId: event.session_id, source: event.source };
   const empty = {

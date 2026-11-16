@@ -1160,6 +1160,28 @@ describe('memoryStartContext', () => {
     expect(result).toEqual({});
   });
 
+  test("the memory hook prints nothing for a brief under a loop's units folder that cannot be read, as after dispatch removes a stray's attempt", () => {
+    const { store, repo } = linked();
+    const home = path.join(tmp, 'home');
+    const brief = path.join(
+      home,
+      '.claude',
+      'sidekick',
+      'loops',
+      'fixer',
+      'units',
+      'fix-bug-42',
+      'w1',
+      'brief.md',
+    );
+    const env = { SIDEKICK_MEMORY_STORE: store, SIDEKICK_WORKER: brief };
+    const result = memoryStartContext(
+      eventFor(repo),
+      depsFor(store, { env, home }),
+    );
+    expect(result).toEqual({});
+  });
+
   test('a SIDEKICK_WORKER naming a brief that cannot be read prints as a plan worker does', () => {
     const { store, repo } = linked();
     // A folder in the brief's place reads as an error, not as a missing file.
