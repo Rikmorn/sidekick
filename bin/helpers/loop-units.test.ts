@@ -330,6 +330,21 @@ describe('readLedger', () => {
       '2026-11-10.jsonl',
     );
   });
+  test('refuses a day file whose name is no real date, naming it, so its lines are never skipped or read twice', () => {
+    const dir = path.join(tmp, 'records');
+    fs.mkdirSync(dir);
+    const line = JSON.stringify(dispatched(0));
+    // February 30 would read as March 2, which another file may also hold.
+    fs.writeFileSync(path.join(dir, '2026-02-30.jsonl'), `${line}\n`);
+    appendRecord(tmp, dispatched(0));
+    const read = readLedger(tmp, at0(1));
+    expect(read).toEqual({
+      issues: [
+        `${path.join(dir, '2026-02-30.jsonl')}: the name is no real date, so sidekick cannot tell which day the file holds`,
+      ],
+    });
+  });
+
   test('reads a day file named for a later local day than now', () => {
     const dir = path.join(tmp, 'records');
     fs.mkdirSync(dir);

@@ -116,11 +116,23 @@ function dayOf(name: string): Date {
   return new Date(year, month - 1, day);
 }
 
+// A name such as `2026-02-30.jsonl` reads as another day, whose file would
+// then be read in its place, so it must name the day it reads as.
+function unrealDayIssues(loopDir: string, names: string[]): string[] {
+  return names
+    .filter((name) => `${localDate(dayOf(name))}.jsonl` !== name)
+    .map(
+      (name) =>
+        `${path.join(loopDir, RECORDS_DIR, name)}: the name is no real date, so sidekick cannot tell which day the file holds`,
+    );
+}
+
 /**
  * Every line of every day file in `records/`, whatever the date its name
  * carries, with `at` up to `now`, oldest first. A line that does not parse is
- * skipped, as `readRecords` does. Refuses when the folder cannot be listed or
- * any day file is unreadable, since a count that skips a file undercounts.
+ * skipped, as `readRecords` does. Refuses when the folder cannot be listed,
+ * any day file is unreadable, or a day file's name is no real date, since a
+ * count that skips a file undercounts.
  */
 export function readLedger(
   loopDir: string,
@@ -129,12 +141,14 @@ export function readLedger(
   const names = dayFiles(loopDir);
   if ('issue' in names) return { issues: [names.issue] };
   if (names.length === 0) return { lines: [] };
+  const unreal = unrealDayIssues(loopDir, names);
   const read = readDayFiles(
     loopDir,
     names.map((name) => dayOf(name)),
   );
-  return read.unreadable.length > 0
-    ? { issues: read.unreadable }
+  const issues = [...unreal, ...read.unreadable];
+  return issues.length > 0
+    ? { issues }
     : {
         lines: read.lines.filter(
           (line) => Date.parse(line.at) <= now.getTime(),

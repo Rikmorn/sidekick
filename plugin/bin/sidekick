@@ -8570,14 +8570,19 @@ function dayOf(name) {
   const [year = 0, month = 1, day = 1] = (match?.slice(1) ?? []).map(Number);
   return new Date(year, month - 1, day);
 }
+function unrealDayIssues(loopDir, names) {
+  return names.filter((name) => `${localDate(dayOf(name))}.jsonl` !== name).map((name) => `${path39.join(loopDir, RECORDS_DIR2, name)}: the name is no real date, so sidekick cannot tell which day the file holds`);
+}
 function readLedger(loopDir, now) {
   const names = dayFiles(loopDir);
   if ("issue" in names)
     return { issues: [names.issue] };
   if (names.length === 0)
     return { lines: [] };
+  const unreal = unrealDayIssues(loopDir, names);
   const read = readDayFiles(loopDir, names.map((name) => dayOf(name)));
-  return read.unreadable.length > 0 ? { issues: read.unreadable } : {
+  const issues = [...unreal, ...read.unreadable];
+  return issues.length > 0 ? { issues } : {
     lines: read.lines.filter((line) => Date.parse(line.at) <= now.getTime())
   };
 }
